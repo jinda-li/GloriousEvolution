@@ -6,6 +6,7 @@ mod stt;
 mod text_filter;
 
 use std::{
+    str::FromStr,
     sync::Mutex,
     time::{Duration, Instant},
 };
@@ -16,7 +17,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, PhysicalPosition, State,
 };
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use thiserror::Error;
 
 type AppResult<T> = Result<T, AppError>;
@@ -60,9 +61,22 @@ impl serde::Serialize for AppError {
     }
 }
 
-#[derive(Default)]
 struct AppState {
     recording: Mutex<Option<audio::RecordingSession>>,
+    registered_shortcut: Mutex<Option<Shortcut>>,
+    last_shortcut_toggle: Mutex<Instant>,
+    shortcut_capture_mode: Mutex<bool>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            recording: Mutex::new(None),
+            registered_shortcut: Mutex::new(None),
+            last_shortcut_toggle: Mutex::new(Instant::now() - Duration::from_secs(1)),
+            shortcut_capture_mode: Mutex::new(false),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -118,13 +132,29 @@ fn load_settings(app: AppHandle) -> AppResult<settings::AppSettings> {
 }
 
 #[tauri::command]
-fn save_settings(app: AppHandle, new_settings: settings::AppSettings) -> AppResult<()> {
-    settings::save(&app, &new_settings)
+fn save_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    new_settings: settings::AppSettings,
+) -> AppResult<()> {
+    settings::save(&app, &new_settings)?;
+    register_shortcut_from_settings(&app, state.inner())?;
+    Ok(())
 }
 
 #[tauri::command]
 fn copy_text(text: String) -> AppResult<()> {
     paste::write_clipboard(&text)
+}
+
+#[tauri::command]
+fn set_shortcut_capture_mode(state: State<'_, AppState>, capturing: bool) -> AppResult<()> {
+    let mut mode = state
+        .shortcut_capture_mode
+        .lock()
+        .map_err(|_| AppError::Config("快捷键录入状态锁定失败。".to_string()))?;
+    *mode = capturing;
+    Ok(())
 }
 
 #[tauri::command]
@@ -316,27 +346,48 @@ pub fn run() {
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
-                        let app = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            let state = app.state::<AppState>();
-                            if let Err(error) = toggle_recording_inner(&app, state.inner()).await {
-                                emit_recording(&app, "error", &error.to_string());
-                            }
-                        });
+                    if event.state != ShortcutState::Pressed {
+                        return;
                     }
+
+                    let state = app.state::<AppState>();
+                    if state
+                        .shortcut_capture_mode
+                        .lock()
+                        .map(|mode| *mode)
+                        .unwrap_or(false)
+                    {
+                        return;
+                    }
+
+                    if let Ok(mut last_toggle) = state.last_shortcut_toggle.lock() {
+                        if last_toggle.elapsed() < Duration::from_millis(400) {
+                            return;
+                        }
+                        *last_toggle = Instant::now();
+                    }
+
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let state = app.state::<AppState>();
+                        if let Err(error) = toggle_recording_inner(&app, state.inner()).await {
+                            emit_recording(&app, "error", &error.to_string());
+                        }
+                    });
                 })
                 .build(),
         )
         .setup(|app| {
             setup_tray(app.handle())?;
-            register_default_shortcut(app.handle())?;
+            let state = app.state::<AppState>();
+            register_shortcut_from_settings(app.handle(), state.inner())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             load_settings,
             save_settings,
             copy_text,
+            set_shortcut_capture_mode,
             start_recording,
             stop_and_process,
             cancel_recording,
@@ -377,9 +428,27 @@ fn setup_tray(app: &AppHandle) -> AppResult<()> {
     Ok(())
 }
 
-fn register_default_shortcut(app: &AppHandle) -> AppResult<()> {
-    let shortcut = Shortcut::new(Some(Modifiers::ALT), Code::KeyQ);
-    app.global_shortcut().register(shortcut)?;
+fn register_shortcut_from_settings(app: &AppHandle, state: &AppState) -> AppResult<()> {
+    let settings = settings::load(app)?;
+    let shortcut = Shortcut::from_str(settings.shortcut.trim()).map_err(|error| {
+        AppError::Config(format!("无效的快捷键 \"{}\": {}", settings.shortcut, error))
+    })?;
+
+    let mut registered = state
+        .registered_shortcut
+        .lock()
+        .map_err(|_| AppError::Config("快捷键状态锁定失败。".to_string()))?;
+
+    if registered.as_ref() == Some(&shortcut) {
+        return Ok(());
+    }
+
+    if let Some(previous) = registered.take() {
+        app.global_shortcut().unregister(previous)?;
+    }
+
+    app.global_shortcut().register(shortcut.clone())?;
+    *registered = Some(shortcut);
     Ok(())
 }
 

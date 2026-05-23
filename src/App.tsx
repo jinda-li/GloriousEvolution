@@ -6,6 +6,7 @@ import type { MouseEvent } from "react";
 
 import { HomeDashboard } from "./components/HomeDashboard";
 import { RecordingBar } from "./components/RecordingBar";
+import { ShortcutInput } from "./components/ShortcutInput";
 import { Sidebar } from "./components/Sidebar";
 import type {
   AppSettings,
@@ -79,15 +80,6 @@ function App() {
     const unlistenPreview = listen<TextPreviewEvent>("text-preview", (event) => {
       setPreviewText(event.payload.text);
     });
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.altKey && event.code === "KeyQ" && !event.repeat) {
-        event.preventDefault();
-        void toggleRecording();
-      }
-    };
-    if (!isRecorderWindow) {
-      window.addEventListener("keydown", handleKeyDown);
-    }
 
     return () => {
       void unlistenStatus.then((dispose) => dispose());
@@ -96,7 +88,6 @@ function App() {
       void unlistenProgress.then((dispose) => dispose());
       void unlistenLatency.then((dispose) => dispose());
       void unlistenPreview.then((dispose) => dispose());
-      window.removeEventListener("keydown", handleKeyDown);
       document.documentElement.classList.remove("recorder-window");
       document.body.classList.remove("recorder-window");
     };
@@ -340,9 +331,9 @@ function SettingsPanel({ settings, saveState, view, onChange, onSave }: Settings
         <div className="two-column">
           <label>
             快捷键
-            <input
+            <ShortcutInput
               value={settings.shortcut}
-              onChange={(event) => onChange({ ...settings, shortcut: event.target.value })}
+              onChange={(shortcut) => onChange({ ...settings, shortcut })}
             />
           </label>
           <label className="toggle-row">

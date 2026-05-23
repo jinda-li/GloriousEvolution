@@ -13,6 +13,9 @@
     "core:window:allow-set-size",
     "core:event:allow-listen",
     "core:event:allow-emit",
+    "global-shortcut:allow-is-registered",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
     "opener:default"
   ]
 }
