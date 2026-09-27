@@ -1,22 +1,17 @@
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
-use crate::{settings::AppSettings, AppResult};
-
-#[derive(Debug, Serialize)]
-struct ChatRequest<'a> {
-    model: &'a str,
-    messages: Vec<ChatMessage<'a>>,
-    temperature: f32,
-}
+use crate::{api, settings::AppSettings, AppResult};
 
 #[derive(Debug, Serialize)]
-struct ChatMessage<'a> {
-    role: &'a str,
-    content: &'a str,
+struct ChatMessage {
+    role: &'static str,
+    content: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct ChatResponse {
+    #[serde(default)]
     choices: Vec<ChatChoice>,
 }
 
@@ -27,7 +22,8 @@ struct ChatChoice {
 
 #[derive(Debug, Deserialize)]
 struct ChatChoiceMessage {
-    content: String,
+    #[serde(default)]
+    content: Option<String>,
 }
 
 pub async fn optimize(raw_text: &str, settings: &AppSettings) -> AppResult<String> {
@@ -35,67 +31,80 @@ pub async fn optimize(raw_text: &str, settings: &AppSettings) -> AppResult<Strin
         return Ok(String::new());
     }
 
-    if settings.optimizer_api_key.trim().is_empty() {
-        return Err(crate::AppError::Config(
-            "请先在设置中填写文本模型 API Key。".to_string(),
-        ));
+    let base_url = settings.base_url();
+    let mut system_prompt = settings.system_prompt.trim().to_string();
+    let terms = settings.dictionary_terms();
+    if !terms.is_empty() {
+        system_prompt.push_str(
+            "\n\n用户词典（识别结果里发音相近的词应替换为以下正确写法）：\n",
+        );
+        system_prompt.push_str(&terms.join("、"));
     }
 
-    if settings.optimizer_base_url.trim().is_empty() {
-        return Err(crate::AppError::Config(
-            "请先在设置中填写文本模型 API Base URL。".to_string(),
-        ));
+    let messages = vec![
+        ChatMessage {
+            role: "system",
+            content: system_prompt,
+        },
+        ChatMessage {
+            role: "user",
+            content: format!("<transcript>\n{}\n</transcript>", raw_text.trim()),
+        },
+    ];
+
+    let mut body = json!({
+        "model": settings.llm_model.trim(),
+        "messages": messages,
+        "temperature": 0.2,
+        "max_tokens": (raw_text.chars().count() * 4).clamp(1024, 8192),
+    });
+    if settings.is_openrouter() {
+        // "none" (not "minimal"): minimal switches thinking ON for hybrid models
+        // like Gemini Flash Lite, adding latency and eating the output budget.
+        body["reasoning"] = json!({ "effort": "none", "exclude": true });
+        body["provider"] = json!({ "sort": "latency" });
     }
 
-    if settings.optimizer_model.trim().is_empty() {
-        return Err(crate::AppError::Config(
-            "请先在设置中填写文本模型名称。".to_string(),
-        ));
-    }
+    let response = api::send_with_retry(|| {
+        api::authorized(
+            api::client().post(format!("{base_url}/chat/completions")),
+            settings,
+        )
+        .json(&body)
+    })
+    .await?;
 
-    let base_url = settings.optimizer_base_url.trim().trim_end_matches('/');
-    let request = ChatRequest {
-        model: settings.optimizer_model.trim(),
-        temperature: 0.2,
-        messages: vec![
-            ChatMessage {
-                role: "system",
-                content: &settings.system_prompt,
-            },
-            ChatMessage {
-                role: "user",
-                content: raw_text,
-            },
-        ],
-    };
-
-    let mut builder = reqwest::Client::new()
-        .post(format!("{base_url}/chat/completions"))
-        .bearer_auth(settings.optimizer_api_key.trim());
-
-    if base_url.contains("openrouter.ai") {
-        builder = builder
-            .header("HTTP-Referer", "https://github.com/glorious-evolution")
-            .header("X-Title", "GloriousEvolution");
-    }
-
-    let response = builder.json(&request).send().await?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(crate::AppError::Api(format!(
-            "文本优化模型请求失败：{status}；Base URL: {base_url}；Model: {}；{body}",
-            settings.optimizer_model.trim()
-        )));
-    }
-
-    let payload: ChatResponse = response.json().await?;
+    let payload: ChatResponse = api::parse_json(response, "文本润色").await?;
     let text = payload
         .choices
-        .first()
-        .map(|choice| choice.message.content.trim().to_string())
-        .unwrap_or_else(|| raw_text.to_string());
+        .into_iter()
+        .next()
+        .and_then(|choice| choice.message.content)
+        .map(|content| strip_wrapping(&content))
+        .unwrap_or_default();
 
     Ok(text)
+}
+
+/// Models occasionally echo the transcript tags or wrap output in quotes.
+fn strip_wrapping(text: &str) -> String {
+    let mut text = text.trim();
+    for tag in ["<transcript>", "</transcript>"] {
+        text = text.trim_start_matches(tag).trim_end_matches(tag).trim();
+    }
+    if text.starts_with("```") && text.ends_with("```") && text.len() > 6 {
+        text = text[3..text.len() - 3].trim();
+    }
+    text.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_wrapping;
+
+    #[test]
+    fn strips_echoed_tags() {
+        assert_eq!(strip_wrapping("<transcript>\n你好。\n</transcript>"), "你好。");
+        assert_eq!(strip_wrapping("  plain  "), "plain");
+    }
 }

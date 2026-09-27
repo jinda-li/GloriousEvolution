@@ -7,15 +7,13 @@
     "core:default",
     "core:window:allow-close",
     "core:window:allow-hide",
+    "core:window:allow-minimize",
     "core:window:allow-show",
     "core:window:allow-start-dragging",
     "core:window:allow-set-position",
     "core:window:allow-set-size",
     "core:event:allow-listen",
     "core:event:allow-emit",
-    "global-shortcut:allow-is-registered",
-    "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister",
     "opener:default"
   ]
 }

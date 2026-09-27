@@ -20,13 +20,27 @@ const NOISE_PHRASES: &[&str] = &[
     "无语音",
 ];
 
-pub fn clean_human_speech_text(text: &str) -> AppResult<String> {
+/// Whole-transcript phrases speech models are known to hallucinate on silence.
+const HALLUCINATIONS: &[&str] = &[
+    "谢谢观看",
+    "谢谢大家观看",
+    "感谢观看",
+    "请不吝点赞 订阅 转发 打赏支持明镜与点点栏目",
+    "字幕由Amara.org社区提供",
+    "字幕志愿者 杨茜茜",
+    "Thank you for watching",
+    "Thanks for watching",
+    "you",
+];
+
+pub fn clean_human_speech_text(text: &str, language: &str) -> AppResult<String> {
     let trimmed = text.trim();
-    if trimmed.is_empty() {
+    if trimmed.is_empty() || is_hallucination(trimmed) {
         return Err(AppError::Audio("没有检测到有效的人声文本。".to_string()));
     }
 
-    if cyrillic_ratio(trimmed) > 0.2 {
+    let expects_chinese = matches!(language, "auto" | "zh" | "");
+    if expects_chinese && cyrillic_ratio(trimmed) > 0.2 {
         return Err(AppError::Audio(
             "识别结果像俄文误识别，已忽略这段录音。".to_string(),
         ));
@@ -47,6 +61,13 @@ pub fn clean_human_speech_text(text: &str) -> AppResult<String> {
     }
 
     Ok(cleaned)
+}
+
+fn is_hallucination(text: &str) -> bool {
+    let normalized = text.trim_matches(|ch: char| ch.is_ascii_punctuation() || "，。！？…、 ".contains(ch));
+    HALLUCINATIONS
+        .iter()
+        .any(|phrase| normalized.eq_ignore_ascii_case(phrase))
 }
 
 fn cyrillic_ratio(text: &str) -> f32 {
@@ -90,4 +111,23 @@ fn is_noise_only(text: &str) -> bool {
     without_noise
         .chars()
         .all(|ch| ch.is_whitespace() || ch.is_ascii_punctuation() || "，。！？、；：…".contains(ch))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::clean_human_speech_text;
+
+    #[test]
+    fn drops_silence_hallucinations() {
+        assert!(clean_human_speech_text("谢谢观看。", "auto").is_err());
+        assert!(clean_human_speech_text("Thank you for watching!", "auto").is_err());
+    }
+
+    #[test]
+    fn keeps_speech_and_strips_noise_tags() {
+        assert_eq!(
+            clean_human_speech_text("[键盘声] 明天下午开会", "auto").unwrap(),
+            "明天下午开会"
+        );
+    }
 }

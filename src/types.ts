@@ -1,11 +1,22 @@
+export type RecordMode = "toggle" | "hold";
+
 export type AppSettings = {
-  elevenlabsApiKey: string;
-  optimizerApiKey: string;
-  optimizerBaseUrl: string;
-  optimizerModel: string;
+  apiKey: string;
+  baseUrl: string;
+  sttModel: string;
+  llmModel: string;
+  polishEnabled: boolean;
+  language: string;
   shortcut: string;
+  recordMode: RecordMode;
   autoPaste: boolean;
+  inputDevice: string;
+  dictionary: string;
   systemPrompt: string;
+  soundEnabled: boolean;
+  historyEnabled: boolean;
+  launchAtLogin: boolean;
+  onboarded: boolean;
 };
 
 export type RecordingStatus = "idle" | "recording" | "processing" | "done" | "error" | "preview";
@@ -28,10 +39,8 @@ export type ProcessingProgressEvent = {
 export type LatencyMetricsEvent = {
   totalMs: number;
   sttMs: number;
-  filterMs: number;
   optimizeMs: number;
   pasteMs: number;
-  bottleneck: string;
 };
 
 export type TextPreviewEvent = {
@@ -43,4 +52,39 @@ export type ProcessResult = {
   optimizedText: string;
   durationSeconds: number;
   delivery: "inserted" | "needsCopy";
+  warning: string | null;
+};
+
+export type HistoryEntry = {
+  id: string;
+  createdAt: number;
+  rawText: string;
+  text: string;
+  durationSeconds: number;
+  polished: boolean;
+};
+
+export type UsageStats = {
+  totalSeconds: number;
+  totalWords: number;
+  totalSessions: number;
+};
+
+export type HistoryStore = {
+  stats: UsageStats;
+  entries: HistoryEntry[];
+};
+
+export type KeyStatus = {
+  label: string;
+  usage: number;
+  limit: number | null;
+  limitRemaining: number | null;
+  isFreeTier: boolean;
+  creditsRemaining: number | null;
+};
+
+export type AppInfo = {
+  version: string;
+  defaultSystemPrompt: string;
 };

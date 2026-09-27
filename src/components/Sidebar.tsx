@@ -1,16 +1,20 @@
-import { Home, Settings } from "lucide-react";
+import { History, Home, Settings } from "lucide-react";
+
+export type View = "home" | "history" | "settings";
 
 type SidebarProps = {
-  activeView: string;
-  onViewChange: (view: string) => void;
+  activeView: View;
+  version: string;
+  onViewChange: (view: View) => void;
 };
 
-const navItems = [
+const navItems: Array<{ id: View; label: string; icon: typeof Home }> = [
   { id: "home", label: "首页", icon: Home },
+  { id: "history", label: "历史记录", icon: History },
   { id: "settings", label: "设置", icon: Settings },
 ];
 
-export function Sidebar({ activeView, onViewChange }: SidebarProps) {
+export function Sidebar({ activeView, version, onViewChange }: SidebarProps) {
   return (
     <aside className="sidebar">
       <nav className="nav-list">
@@ -23,12 +27,16 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
               onClick={() => onViewChange(item.id)}
               type="button"
             >
-              <Icon size={18} />
+              <Icon size={17} />
               <span>{item.label}</span>
             </button>
           );
         })}
       </nav>
+      <div className="sidebar-footer">
+        <span>OpenRouter 驱动</span>
+        {version ? <span>v{version}</span> : null}
+      </div>
     </aside>
   );
 }

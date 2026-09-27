@@ -1,42 +1,42 @@
 use reqwest::multipart;
 use serde::Deserialize;
-use std::path::Path;
 
-use crate::AppResult;
+use crate::{api, settings::AppSettings, AppResult};
 
 #[derive(Debug, Deserialize)]
-struct ElevenLabsSttResponse {
+struct TranscriptionResponse {
+    #[serde(default)]
     text: String,
 }
 
-pub async fn transcribe(audio_path: &Path, api_key: &str) -> AppResult<String> {
-    if api_key.trim().is_empty() {
-        return Err(crate::AppError::Config(
-            "请先在设置中填写 ElevenLabs API Key。".to_string(),
-        ));
-    }
+pub async fn transcribe(wav: Vec<u8>, settings: &AppSettings) -> AppResult<String> {
+    let base_url = settings.base_url();
+    let model = settings.stt_model.trim().to_string();
+    let language = settings.language.trim().to_string();
 
-    let audio = tokio::fs::read(audio_path).await?;
-    let file = multipart::Part::bytes(audio).file_name("recording.wav");
-    let form = multipart::Form::new()
-        .part("file", file)
-        .text("model_id", "scribe_v1");
+    let response = api::send_with_retry(|| {
+        let mut form = multipart::Form::new()
+            .part(
+                "file",
+                multipart::Part::bytes(wav.clone())
+                    .file_name("recording.wav")
+                    .mime_str("audio/wav")
+                    .expect("static mime type is valid"),
+            )
+            .text("model", model.clone())
+            .text("temperature", "0");
+        if !language.is_empty() && language != "auto" {
+            form = form.text("language", language.clone());
+        }
 
-    let response = reqwest::Client::new()
-        .post("https://api.elevenlabs.io/v1/speech-to-text")
-        .header("xi-api-key", api_key)
+        api::authorized(
+            api::client().post(format!("{base_url}/audio/transcriptions")),
+            settings,
+        )
         .multipart(form)
-        .send()
-        .await?;
+    })
+    .await?;
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(crate::AppError::Api(format!(
-            "ElevenLabs STT 请求失败：{status} {body}"
-        )));
-    }
-
-    let payload: ElevenLabsSttResponse = response.json().await?;
-    Ok(payload.text)
+    let payload: TranscriptionResponse = api::parse_json(response, "语音识别").await?;
+    Ok(payload.text.trim().to_string())
 }

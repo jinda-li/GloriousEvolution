@@ -1,7 +1,7 @@
 {
   "name": "glorious-evolution",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
@@ -10,13 +10,13 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@tauri-apps/api": "latest",
+    "@tauri-apps/api": "^2.12.0",
     "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "latest",
+    "@tauri-apps/cli": "^2.12.0",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@vitejs/plugin-react": "latest",

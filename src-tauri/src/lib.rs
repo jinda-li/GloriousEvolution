@@ -1,4 +1,6 @@
+mod api;
 mod audio;
+mod history;
 mod optimizer;
 mod paste;
 mod settings;
@@ -7,20 +9,34 @@ mod text_filter;
 
 use std::{
     str::FromStr,
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Mutex,
+    },
     time::{Duration, Instant},
 };
 
 use serde::Serialize;
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, PhysicalPosition, State,
+    AppHandle, Emitter, Manager, PhysicalPosition, State, WindowEvent,
 };
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_opener::OpenerExt;
 use thiserror::Error;
 
+use settings::RecordMode;
+
 type AppResult<T> = Result<T, AppError>;
+
+/// Recordings are capped so a forgotten session cannot run up an API bill.
+const MAX_RECORDING_SECONDS: u64 = 10 * 60;
+const MIN_RECORDING_SECONDS: f64 = 0.4;
+/// RMS below this across the whole take means the mic heard nothing.
+const SILENCE_PEAK: f32 = 0.004;
+const AUTOSTART_FLAG: &str = "--minimized";
 
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -39,16 +55,14 @@ pub enum AppError {
     #[error(transparent)]
     GlobalShortcut(#[from] tauri_plugin_global_shortcut::Error),
     #[error(transparent)]
-    Reqwest(#[from] reqwest::Error),
-    #[error(transparent)]
     Clipboard(#[from] arboard::Error),
     #[error(transparent)]
     Hound(#[from] hound::Error),
-    #[error(transparent)]
+    #[error("麦克风不可用：{0}")]
     CpalDefaultConfig(#[from] cpal::DefaultStreamConfigError),
-    #[error(transparent)]
+    #[error("麦克风不可用：{0}")]
     CpalBuildStream(#[from] cpal::BuildStreamError),
-    #[error(transparent)]
+    #[error("麦克风不可用：{0}")]
     CpalPlayStream(#[from] cpal::PlayStreamError),
 }
 
@@ -63,20 +77,30 @@ impl serde::Serialize for AppError {
 
 struct AppState {
     recording: Mutex<Option<audio::RecordingSession>>,
+    processing: AtomicBool,
+    session_id: AtomicU64,
     registered_shortcut: Mutex<Option<Shortcut>>,
+    cancel_shortcut_active: AtomicBool,
     last_shortcut_toggle: Mutex<Instant>,
-    shortcut_capture_mode: Mutex<bool>,
+    shortcut_capture_mode: AtomicBool,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
             recording: Mutex::new(None),
+            processing: AtomicBool::new(false),
+            session_id: AtomicU64::new(0),
             registered_shortcut: Mutex::new(None),
+            cancel_shortcut_active: AtomicBool::new(false),
             last_shortcut_toggle: Mutex::new(Instant::now() - Duration::from_secs(1)),
-            shortcut_capture_mode: Mutex::new(false),
+            shortcut_capture_mode: AtomicBool::new(false),
         }
     }
+}
+
+fn cancel_shortcut() -> Shortcut {
+    Shortcut::new(None, Code::Escape)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -86,6 +110,7 @@ struct ProcessResult {
     optimized_text: String,
     duration_seconds: f64,
     delivery: &'static str,
+    warning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -114,10 +139,8 @@ struct ProcessingProgressEvent {
 struct LatencyMetricsEvent {
     total_ms: u128,
     stt_ms: u128,
-    filter_ms: u128,
     optimize_ms: u128,
     paste_ms: u128,
-    bottleneck: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -125,6 +148,17 @@ struct LatencyMetricsEvent {
 struct TextPreviewEvent {
     text: String,
 }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppInfo {
+    version: &'static str,
+    default_system_prompt: String,
+}
+
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
 
 #[tauri::command]
 fn load_settings(app: AppHandle) -> AppResult<settings::AppSettings> {
@@ -137,9 +171,57 @@ fn save_settings(
     state: State<'_, AppState>,
     new_settings: settings::AppSettings,
 ) -> AppResult<()> {
+    // Validate the shortcut before persisting so a typo cannot brick the hotkey.
+    Shortcut::from_str(new_settings.shortcut.trim()).map_err(|error| {
+        AppError::Config(format!("无效的快捷键 \"{}\"：{error}", new_settings.shortcut))
+    })?;
     settings::save(&app, &new_settings)?;
     register_shortcut_from_settings(&app, state.inner())?;
+    apply_autostart(&app, new_settings.launch_at_login);
     Ok(())
+}
+
+#[tauri::command]
+fn app_info() -> AppInfo {
+    AppInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        default_system_prompt: settings::default_system_prompt(),
+    }
+}
+
+#[tauri::command]
+async fn test_connection(new_settings: settings::AppSettings) -> AppResult<api::KeyStatus> {
+    api::check_key(&new_settings).await
+}
+
+#[tauri::command]
+fn list_input_devices() -> Vec<String> {
+    audio::list_input_devices()
+}
+
+#[tauri::command]
+fn get_history(app: AppHandle) -> AppResult<history::HistoryStore> {
+    history::load(&app)
+}
+
+#[tauri::command]
+fn delete_history_entry(app: AppHandle, id: String) -> AppResult<history::HistoryStore> {
+    history::delete(&app, &id)
+}
+
+#[tauri::command]
+fn clear_history(app: AppHandle) -> AppResult<history::HistoryStore> {
+    history::clear(&app)
+}
+
+#[tauri::command]
+fn open_external(app: AppHandle, url: String) -> AppResult<()> {
+    if !url.starts_with("https://") {
+        return Err(AppError::Config("只允许打开 https 链接。".to_string()));
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|error| AppError::Config(error.to_string()))
 }
 
 #[tauri::command]
@@ -148,13 +230,8 @@ fn copy_text(text: String) -> AppResult<()> {
 }
 
 #[tauri::command]
-fn set_shortcut_capture_mode(state: State<'_, AppState>, capturing: bool) -> AppResult<()> {
-    let mut mode = state
-        .shortcut_capture_mode
-        .lock()
-        .map_err(|_| AppError::Config("快捷键录入状态锁定失败。".to_string()))?;
-    *mode = capturing;
-    Ok(())
+fn set_shortcut_capture_mode(state: State<'_, AppState>, capturing: bool) {
+    state.shortcut_capture_mode.store(capturing, Ordering::SeqCst);
 }
 
 #[tauri::command]
@@ -162,136 +239,9 @@ fn start_recording(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> 
     start_recording_inner(&app, state.inner())
 }
 
-fn start_recording_inner(app: &AppHandle, state: &AppState) -> AppResult<()> {
-    let mut recording = state
-        .recording
-        .lock()
-        .map_err(|_| AppError::Audio("录音状态锁定失败。".to_string()))?;
-
-    if recording.is_some() {
-        return Ok(());
-    }
-
-    let app_for_level = app.clone();
-    let last_emit = std::sync::Arc::new(Mutex::new(Instant::now() - Duration::from_millis(100)));
-    let last_emit_for_callback = last_emit.clone();
-    let session = audio::start(std::sync::Arc::new(move |level| {
-        if let Ok(mut last_emit) = last_emit_for_callback.lock() {
-            if last_emit.elapsed() >= Duration::from_millis(80) {
-                *last_emit = Instant::now();
-                let _ = app_for_level.emit("audio-level", AudioLevelEvent { level });
-            }
-        }
-    }))?;
-    *recording = Some(session);
-    show_recorder_window(app)?;
-    emit_recording(app, "recording", "正在录音，再次按快捷键结束。");
-    Ok(())
-}
-
 #[tauri::command]
-async fn stop_and_process(app: AppHandle, state: State<'_, AppState>) -> AppResult<ProcessResult> {
+async fn stop_and_process(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
     stop_and_process_inner(&app, state.inner()).await
-}
-
-async fn stop_and_process_inner(app: &AppHandle, state: &AppState) -> AppResult<ProcessResult> {
-    let session = {
-        let mut recording = state
-            .recording
-            .lock()
-            .map_err(|_| AppError::Audio("录音状态锁定失败。".to_string()))?;
-        recording.take()
-    };
-
-    let Some(session) = session else {
-        return Err(AppError::Audio("当前没有正在进行的录音。".to_string()));
-    };
-
-    emit_recording(app, "processing", "正在处理语音。");
-    emit_progress(app, "stopping", "保存录音", 0.12);
-    let total_start = Instant::now();
-    let stopped = session.stop()?;
-    let settings = settings::load(app)?;
-    if let Some(message) = missing_required_config_message(&settings) {
-        let _ = std::fs::remove_file(stopped.path);
-        emit_recording(app, "error", &message);
-        return Err(AppError::Config(message));
-    }
-
-    emit_progress(app, "stt", "语音识别", 0.28);
-    let stt_start = Instant::now();
-    let raw_text = stt::transcribe(&stopped.path, &settings.elevenlabs_api_key).await?;
-    let stt_ms = stt_start.elapsed().as_millis();
-
-    emit_progress(app, "filter", "清洗文本", 0.58);
-    let filter_start = Instant::now();
-    let human_text = text_filter::clean_human_speech_text(&raw_text)?;
-    let filter_ms = filter_start.elapsed().as_millis();
-
-    emit_progress(app, "optimize", "文本优化", 0.72);
-    let optimize_start = Instant::now();
-    let optimized_text = optimizer::optimize(&human_text, &settings).await?;
-    let optimize_ms = optimize_start.elapsed().as_millis();
-
-    emit_progress(app, "paste", "输出文本", 0.92);
-    let paste_start = Instant::now();
-    let delivery = paste::deliver_text(&settings, &optimized_text)?;
-    let paste_ms = paste_start.elapsed().as_millis();
-
-    let delivery_label = match delivery {
-        paste::TextDelivery::Inserted => {
-            hide_recorder_window(app)?;
-            emit_recording(app, "done", "文本已输入。");
-            "inserted"
-        }
-        paste::TextDelivery::NeedsCopy => {
-            emit_text_preview(app, &optimized_text);
-            emit_recording(app, "preview", "未找到输入焦点，请复制。");
-            "needsCopy"
-        }
-    };
-    emit_progress(app, "done", "完成", 1.0);
-
-    let _ = std::fs::remove_file(stopped.path);
-    let result = ProcessResult {
-        raw_text: human_text,
-        optimized_text,
-        duration_seconds: stopped.duration_seconds,
-        delivery: delivery_label,
-    };
-    let _ = app.emit("process-result", &result);
-    emit_latency_metrics(
-        app,
-        LatencyMetricsEvent {
-            total_ms: total_start.elapsed().as_millis(),
-            stt_ms,
-            filter_ms,
-            optimize_ms,
-            paste_ms,
-            bottleneck: bottleneck(stt_ms, filter_ms, optimize_ms, paste_ms),
-        },
-    );
-    Ok(result)
-}
-
-fn missing_required_config_message(settings: &settings::AppSettings) -> Option<String> {
-    if settings.elevenlabs_api_key.trim().is_empty() {
-        return Some("请先在设置中填写 ElevenLabs API Key。".to_string());
-    }
-
-    if settings.optimizer_api_key.trim().is_empty() {
-        return Some("请先在设置中填写文本模型 API Key。".to_string());
-    }
-
-    if settings.optimizer_base_url.trim().is_empty() {
-        return Some("请先在设置中填写文本模型 API Base URL。".to_string());
-    }
-
-    if settings.optimizer_model.trim().is_empty() {
-        return Some("请先在设置中填写文本模型名称。".to_string());
-    }
-
-    None
 }
 
 #[tauri::command]
@@ -299,18 +249,233 @@ fn cancel_recording(app: AppHandle, state: State<'_, AppState>) -> AppResult<()>
     cancel_recording_inner(&app, state.inner())
 }
 
-fn cancel_recording_inner(app: &AppHandle, state: &AppState) -> AppResult<()> {
-    let session = {
-        let mut recording = state
-            .recording
-            .lock()
-            .map_err(|_| AppError::Audio("录音状态锁定失败。".to_string()))?;
-        recording.take()
+#[tauri::command]
+async fn toggle_recording(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
+    toggle_recording_inner(&app, state.inner()).await
+}
+
+#[tauri::command]
+fn hide_recorder(app: AppHandle) -> AppResult<()> {
+    hide_recorder_window(&app)
+}
+
+// ---------------------------------------------------------------------------
+// Recording pipeline
+// ---------------------------------------------------------------------------
+
+fn is_recording(state: &AppState) -> bool {
+    state
+        .recording
+        .lock()
+        .map(|recording| recording.is_some())
+        .unwrap_or(false)
+}
+
+fn start_recording_inner(app: &AppHandle, state: &AppState) -> AppResult<()> {
+    if state.processing.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+
+    let settings = settings::load(app)?;
+    if settings.api_key.trim().is_empty() {
+        show_main_window(app);
+        let message = "请先在设置中填写 OpenRouter API Key。".to_string();
+        emit_recording(app, "error", &message);
+        return Err(AppError::Config(message));
+    }
+
+    let mut recording = state
+        .recording
+        .lock()
+        .map_err(|_| AppError::Audio("录音状态锁定失败。".to_string()))?;
+    if recording.is_some() {
+        return Ok(());
+    }
+
+    let app_for_level = app.clone();
+    let last_emit = Mutex::new(Instant::now() - Duration::from_millis(100));
+    let session = audio::start(
+        &settings.input_device,
+        std::sync::Arc::new(move |level| {
+            if let Ok(mut last_emit) = last_emit.lock() {
+                if last_emit.elapsed() >= Duration::from_millis(50) {
+                    *last_emit = Instant::now();
+                    let _ = app_for_level.emit("audio-level", AudioLevelEvent { level });
+                }
+            }
+        }),
+    )?;
+    *recording = Some(session);
+    drop(recording);
+
+    let session_id = state.session_id.fetch_add(1, Ordering::SeqCst) + 1;
+    set_cancel_shortcut(app, state, true);
+    show_recorder_window(app)?;
+    let hint = match settings.record_mode {
+        RecordMode::Toggle => "正在聆听，再按一次快捷键结束，Esc 取消。",
+        RecordMode::Hold => "正在聆听，松开快捷键结束，Esc 取消。",
     };
+    emit_recording(app, "recording", hint);
+    spawn_recording_watchdog(app.clone(), session_id);
+    Ok(())
+}
+
+fn spawn_recording_watchdog(app: AppHandle, session_id: u64) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(MAX_RECORDING_SECONDS)).await;
+        let state = app.state::<AppState>();
+        if state.session_id.load(Ordering::SeqCst) == session_id && is_recording(state.inner()) {
+            let _ = stop_and_process_inner(&app, state.inner()).await;
+        }
+    });
+}
+
+async fn stop_and_process_inner(app: &AppHandle, state: &AppState) -> AppResult<()> {
+    if state.processing.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
+    let session = match state.recording.lock() {
+        Ok(mut recording) => recording.take(),
+        Err(_) => None,
+    };
+    let Some(session) = session else {
+        state.processing.store(false, Ordering::SeqCst);
+        return Ok(());
+    };
+    set_cancel_shortcut(app, state, false);
+
+    let result = process_session(app, session).await;
+    state.processing.store(false, Ordering::SeqCst);
+
+    if let Err(error) = &result {
+        emit_recording(app, "error", &error.to_string());
+    }
+    result.map(|_| ())
+}
+
+/// Returns `None` when the take was too short to be worth transcribing.
+async fn process_session(
+    app: &AppHandle,
+    session: audio::RecordingSession,
+) -> AppResult<Option<ProcessResult>> {
+    emit_recording(app, "processing", "正在识别…");
+    emit_progress(app, "stopping", "准备音频", 0.1);
+    let total_start = Instant::now();
+    let too_short = session.elapsed_seconds() < MIN_RECORDING_SECONDS;
+    let stopped = tauri::async_runtime::spawn_blocking(move || session.stop())
+        .await
+        .map_err(|error| AppError::Audio(error.to_string()))??;
+
+    if too_short || stopped.duration_seconds < MIN_RECORDING_SECONDS {
+        hide_recorder_window(app)?;
+        emit_recording(app, "idle", "录音太短，已忽略。");
+        return Ok(None);
+    }
+    if stopped.peak < SILENCE_PEAK {
+        return Err(AppError::Audio(
+            "没有检测到声音，请检查麦克风是否静音或选错设备。".to_string(),
+        ));
+    }
+
+    let settings = settings::load(app)?;
+
+    emit_progress(app, "stt", "语音识别", 0.3);
+    let stt_start = Instant::now();
+    let raw_text = stt::transcribe(stopped.wav, &settings).await?;
+    let stt_ms = stt_start.elapsed().as_millis();
+
+    let human_text = text_filter::clean_human_speech_text(&raw_text, settings.language.trim())?;
+
+    let optimize_start = Instant::now();
+    let mut warning = None;
+    let mut polished = false;
+    let final_text = if settings.polish_enabled && !settings.llm_model.trim().is_empty() {
+        emit_progress(app, "optimize", "智能润色", 0.65);
+        match optimizer::optimize(&human_text, &settings).await {
+            Ok(text) if !text.trim().is_empty() => {
+                polished = true;
+                text
+            }
+            Ok(_) => human_text.clone(),
+            // Never lose a dictation because the polish step failed.
+            Err(error) => {
+                warning = Some(format!("润色失败，已输出原始识别：{error}"));
+                human_text.clone()
+            }
+        }
+    } else {
+        human_text.clone()
+    };
+    let optimize_ms = optimize_start.elapsed().as_millis();
+
+    emit_progress(app, "paste", "输出文本", 0.92);
+    let paste_start = Instant::now();
+    let delivery = {
+        let settings = settings.clone();
+        let text = final_text.clone();
+        tauri::async_runtime::spawn_blocking(move || paste::deliver_text(&settings, &text))
+            .await
+            .map_err(|error| AppError::Audio(error.to_string()))??
+    };
+    let paste_ms = paste_start.elapsed().as_millis();
+
+    let delivery_label = match delivery {
+        paste::TextDelivery::Inserted => {
+            hide_recorder_window(app)?;
+            emit_recording(app, "done", "已输入。");
+            "inserted"
+        }
+        paste::TextDelivery::NeedsCopy => {
+            emit_text_preview(app, &final_text);
+            emit_recording(app, "preview", "没有找到输入框，点击复制。");
+            "needsCopy"
+        }
+    };
+    emit_progress(app, "done", "完成", 1.0);
+
+    if let Ok(store) = history::record(
+        app,
+        settings.history_enabled,
+        &human_text,
+        &final_text,
+        stopped.duration_seconds,
+        polished,
+    ) {
+        let _ = app.emit("history-updated", &store);
+    }
+
+    let result = ProcessResult {
+        raw_text: human_text,
+        optimized_text: final_text,
+        duration_seconds: stopped.duration_seconds,
+        delivery: delivery_label,
+        warning,
+    };
+    let _ = app.emit("process-result", &result);
+    let _ = app.emit(
+        "latency-metrics",
+        LatencyMetricsEvent {
+            total_ms: total_start.elapsed().as_millis(),
+            stt_ms,
+            optimize_ms,
+            paste_ms,
+        },
+    );
+    Ok(Some(result))
+}
+
+fn cancel_recording_inner(app: &AppHandle, state: &AppState) -> AppResult<()> {
+    let session = state
+        .recording
+        .lock()
+        .map_err(|_| AppError::Audio("录音状态锁定失败。".to_string()))?
+        .take();
+    set_cancel_shortcut(app, state, false);
 
     if let Some(session) = session {
-        let stopped = session.stop()?;
-        let _ = std::fs::remove_file(stopped.path);
+        std::thread::spawn(move || {
+            let _ = session.stop();
+        });
     }
 
     hide_recorder_window(app)?;
@@ -318,98 +483,221 @@ fn cancel_recording_inner(app: &AppHandle, state: &AppState) -> AppResult<()> {
     Ok(())
 }
 
-#[tauri::command]
-async fn toggle_recording(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
-    toggle_recording_inner(&app, state.inner()).await
+async fn toggle_recording_inner(app: &AppHandle, state: &AppState) -> AppResult<()> {
+    if is_recording(state) {
+        stop_and_process_inner(app, state).await
+    } else {
+        start_recording_inner(app, state)
+    }
 }
 
-async fn toggle_recording_inner(app: &AppHandle, state: &AppState) -> AppResult<()> {
-    let is_recording = state
-        .recording
-        .lock()
-        .map_err(|_| AppError::Audio("录音状态锁定失败。".to_string()))?
-        .is_some();
+// ---------------------------------------------------------------------------
+// Shortcuts
+// ---------------------------------------------------------------------------
 
-    if is_recording {
-        let _ = stop_and_process_inner(app, state).await?;
-    } else {
-        start_recording_inner(app, state)?;
+fn handle_global_shortcut(app: &AppHandle, shortcut: &Shortcut, pressed: bool) {
+    let state = app.state::<AppState>();
+    if state.shortcut_capture_mode.load(Ordering::SeqCst) {
+        return;
     }
 
+    if *shortcut == cancel_shortcut() {
+        if pressed && state.cancel_shortcut_active.load(Ordering::SeqCst) {
+            let _ = cancel_recording_inner(app, state.inner());
+        }
+        return;
+    }
+
+    let mode = settings::load(app)
+        .map(|settings| settings.record_mode)
+        .unwrap_or_default();
+
+    let action = match (mode, pressed) {
+        (RecordMode::Toggle, true) => {
+            if let Ok(mut last_toggle) = state.last_shortcut_toggle.lock() {
+                if last_toggle.elapsed() < Duration::from_millis(300) {
+                    return;
+                }
+                *last_toggle = Instant::now();
+            }
+            ShortcutAction::Toggle
+        }
+        (RecordMode::Toggle, false) => return,
+        (RecordMode::Hold, true) => ShortcutAction::Start,
+        (RecordMode::Hold, false) => ShortcutAction::Stop,
+    };
+
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        let result = match action {
+            ShortcutAction::Toggle => toggle_recording_inner(&app, state.inner()).await,
+            ShortcutAction::Start => {
+                if is_recording(state.inner()) {
+                    Ok(())
+                } else {
+                    start_recording_inner(&app, state.inner())
+                }
+            }
+            ShortcutAction::Stop => stop_and_process_inner(&app, state.inner()).await,
+        };
+        if let Err(error) = result {
+            emit_recording(&app, "error", &error.to_string());
+        }
+    });
+}
+
+#[derive(Clone, Copy)]
+enum ShortcutAction {
+    Toggle,
+    Start,
+    Stop,
+}
+
+fn set_cancel_shortcut(app: &AppHandle, state: &AppState, active: bool) {
+    let was_active = state.cancel_shortcut_active.swap(active, Ordering::SeqCst);
+    if was_active == active {
+        return;
+    }
+    let shortcuts = app.global_shortcut();
+    if active {
+        // Another app may own Esc globally; recording still works without it.
+        let _ = shortcuts.register(cancel_shortcut());
+    } else {
+        let _ = shortcuts.unregister(cancel_shortcut());
+    }
+}
+
+fn register_shortcut_from_settings(app: &AppHandle, state: &AppState) -> AppResult<()> {
+    let settings = settings::load(app)?;
+    let shortcut = Shortcut::from_str(settings.shortcut.trim()).map_err(|error| {
+        AppError::Config(format!("无效的快捷键 \"{}\"：{error}", settings.shortcut))
+    })?;
+
+    let mut registered = state
+        .registered_shortcut
+        .lock()
+        .map_err(|_| AppError::Config("快捷键状态锁定失败。".to_string()))?;
+
+    if registered.as_ref() == Some(&shortcut) {
+        return Ok(());
+    }
+
+    if let Some(previous) = registered.take() {
+        let _ = app.global_shortcut().unregister(previous);
+    }
+
+    app.global_shortcut().register(shortcut).map_err(|error| {
+        AppError::Config(format!(
+            "快捷键 {} 注册失败，可能已被其他程序占用：{error}",
+            settings.shortcut
+        ))
+    })?;
+    *registered = Some(shortcut);
     Ok(())
 }
 
+fn apply_autostart(app: &AppHandle, enabled: bool) {
+    let autolaunch = app.autolaunch();
+    let current = autolaunch.is_enabled().unwrap_or(false);
+    if enabled && !current {
+        let _ = autolaunch.enable();
+    } else if !enabled && current {
+        let _ = autolaunch.disable();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// App setup
+// ---------------------------------------------------------------------------
+
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main_window(app);
+        }))
         .manage(AppState::default())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec![AUTOSTART_FLAG]),
+        ))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state != ShortcutState::Pressed {
-                        return;
-                    }
-
-                    let state = app.state::<AppState>();
-                    if state
-                        .shortcut_capture_mode
-                        .lock()
-                        .map(|mode| *mode)
-                        .unwrap_or(false)
-                    {
-                        return;
-                    }
-
-                    if let Ok(mut last_toggle) = state.last_shortcut_toggle.lock() {
-                        if last_toggle.elapsed() < Duration::from_millis(400) {
-                            return;
-                        }
-                        *last_toggle = Instant::now();
-                    }
-
-                    let app = app.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let state = app.state::<AppState>();
-                        if let Err(error) = toggle_recording_inner(&app, state.inner()).await {
-                            emit_recording(&app, "error", &error.to_string());
-                        }
-                    });
+                .with_handler(|app, shortcut, event| {
+                    handle_global_shortcut(app, shortcut, event.state == ShortcutState::Pressed);
                 })
                 .build(),
         )
         .setup(|app| {
             setup_tray(app.handle())?;
             let state = app.state::<AppState>();
-            register_shortcut_from_settings(app.handle(), state.inner())?;
+            let settings = settings::load(app.handle()).unwrap_or_default();
+            if let Err(error) = register_shortcut_from_settings(app.handle(), state.inner()) {
+                eprintln!("{error}");
+            }
+
+            let started_hidden = std::env::args().any(|arg| arg == AUTOSTART_FLAG);
+            if !started_hidden || settings.api_key.trim().is_empty() {
+                show_main_window(app.handle());
+            }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing the main window keeps the app alive in the tray.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             load_settings,
             save_settings,
+            app_info,
+            test_connection,
+            list_input_devices,
+            get_history,
+            delete_history_entry,
+            clear_history,
+            open_external,
             copy_text,
             set_shortcut_capture_mode,
             start_recording,
             stop_and_process,
             cancel_recording,
-            toggle_recording
+            toggle_recording,
+            hide_recorder
         ])
         .run(tauri::generate_context!())
         .expect("error while running GloriousEvolution");
 }
 
 fn setup_tray(app: &AppHandle) -> AppResult<()> {
-    let show = MenuItem::with_id(app, "show", "Show GloriousEvolution", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &quit])?;
+    let show = MenuItem::with_id(app, "show", "打开主界面", true, None::<&str>)?;
+    let toggle = MenuItem::with_id(app, "toggle", "开始 / 结束录音", true, None::<&str>)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &toggle, &separator, &quit])?;
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))?;
 
     TrayIconBuilder::with_id("glorious-evolution")
-        .tooltip("GloriousEvolution")
+        .tooltip("GloriousEvolution 语音输入")
         .icon(icon)
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show" => show_main_window(app),
+            "toggle" => {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let state = app.state::<AppState>();
+                    if let Err(error) = toggle_recording_inner(&app, state.inner()).await {
+                        emit_recording(&app, "error", &error.to_string());
+                    }
+                });
+            }
             "quit" => app.exit(0),
             _ => {}
         })
@@ -428,48 +716,40 @@ fn setup_tray(app: &AppHandle) -> AppResult<()> {
     Ok(())
 }
 
-fn register_shortcut_from_settings(app: &AppHandle, state: &AppState) -> AppResult<()> {
-    let settings = settings::load(app)?;
-    let shortcut = Shortcut::from_str(settings.shortcut.trim()).map_err(|error| {
-        AppError::Config(format!("无效的快捷键 \"{}\": {}", settings.shortcut, error))
-    })?;
-
-    let mut registered = state
-        .registered_shortcut
-        .lock()
-        .map_err(|_| AppError::Config("快捷键状态锁定失败。".to_string()))?;
-
-    if registered.as_ref() == Some(&shortcut) {
-        return Ok(());
-    }
-
-    if let Some(previous) = registered.take() {
-        app.global_shortcut().unregister(previous)?;
-    }
-
-    app.global_shortcut().register(shortcut.clone())?;
-    *registered = Some(shortcut);
-    Ok(())
-}
+// ---------------------------------------------------------------------------
+// Windows & events
+// ---------------------------------------------------------------------------
 
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
     }
 }
 
 fn show_recorder_window(app: &AppHandle) -> AppResult<()> {
-    if let Some(window) = app.get_webview_window("recorder") {
-        if let Some(monitor) = window.current_monitor()? {
-            let size = monitor.size();
-            let win_size = window.outer_size()?;
-            let x = (size.width.saturating_sub(win_size.width) / 2) as i32;
-            let y = (size.height.saturating_sub(win_size.height) as i32) - 92;
-            window.set_position(PhysicalPosition { x, y })?;
-        }
-        window.show()?;
+    let Some(window) = app.get_webview_window("recorder") else {
+        return Ok(());
+    };
+
+    // Follow the cursor so the pill appears on the monitor the user is working on.
+    let monitor = app
+        .cursor_position()
+        .ok()
+        .and_then(|point| app.monitor_from_point(point.x, point.y).ok().flatten())
+        .or_else(|| window.current_monitor().ok().flatten())
+        .or_else(|| app.primary_monitor().ok().flatten());
+
+    if let Some(monitor) = monitor {
+        let area = monitor.work_area();
+        let win_size = window.outer_size()?;
+        let margin = (24.0 * monitor.scale_factor()) as i32;
+        let x = area.position.x + (area.size.width.saturating_sub(win_size.width) / 2) as i32;
+        let y = area.position.y + area.size.height.saturating_sub(win_size.height) as i32 - margin;
+        window.set_position(PhysicalPosition { x, y })?;
     }
+    window.show()?;
     Ok(())
 }
 
@@ -501,10 +781,6 @@ fn emit_progress(app: &AppHandle, phase: &'static str, message: &str, progress: 
     );
 }
 
-fn emit_latency_metrics(app: &AppHandle, metrics: LatencyMetricsEvent) {
-    let _ = app.emit("latency-metrics", metrics);
-}
-
 fn emit_text_preview(app: &AppHandle, text: &str) {
     let _ = app.emit(
         "text-preview",
@@ -512,18 +788,4 @@ fn emit_text_preview(app: &AppHandle, text: &str) {
             text: text.to_string(),
         },
     );
-}
-
-fn bottleneck(stt_ms: u128, filter_ms: u128, optimize_ms: u128, paste_ms: u128) -> &'static str {
-    let mut winner = ("语音识别", stt_ms);
-    for candidate in [
-        ("文本清洗", filter_ms),
-        ("文本优化", optimize_ms),
-        ("粘贴写入", paste_ms),
-    ] {
-        if candidate.1 > winner.1 {
-            winner = candidate;
-        }
-    }
-    winner.0
 }

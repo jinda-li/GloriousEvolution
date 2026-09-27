@@ -1,116 +1,222 @@
-import { Clock, Keyboard, Mic, Square, Type } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { AlertTriangle, Check, Clock, Copy, Mic, Sparkles, Square, Timer, Type } from "lucide-react";
+import { useState } from "react";
+import type { ReactNode } from "react";
+
+import type { SaveState } from "../App";
+import type {
+  AppSettings,
+  HistoryEntry,
+  LatencyMetricsEvent,
+  ProcessResult,
+  RecordingStatus,
+  UsageStats,
+} from "../types";
+import { estimateMinutesSaved, formatDuration } from "../utils/format";
+import { ApiKeyField } from "./ApiKeyField";
 
 type HomeDashboardProps = {
-  shortcut: string;
+  loaded: boolean;
+  needsSetup: boolean;
+  settings: AppSettings;
+  onSettingsChange: (settings: AppSettings) => void;
+  saveState: SaveState;
+  recordingStatus: RecordingStatus;
   statusMessage: string;
-  lastRawText: string;
-  lastOptimizedText: string;
-  recordingStatus: string;
-  totalSeconds: number;
-  totalWords: number;
-  missingConfig: string;
+  lastResult: ProcessResult | null;
+  latency: LatencyMetricsEvent | null;
+  stats: UsageStats;
+  latestEntry: HistoryEntry | null;
   onToggleRecording: () => void;
   onOpenSettings: () => void;
 };
 
-export function HomeDashboard({
-  shortcut,
-  statusMessage,
-  lastRawText,
-  lastOptimizedText,
-  recordingStatus,
-  totalSeconds,
-  totalWords,
-  missingConfig,
-  onToggleRecording,
-  onOpenSettings,
-}: HomeDashboardProps) {
-  const isRecording = recordingStatus === "recording";
-  const isProcessing = recordingStatus === "processing";
-  const isMissingConfig = Boolean(missingConfig);
+export function HomeDashboard(props: HomeDashboardProps) {
+  if (!props.loaded) {
+    return <section className="page" />;
+  }
+  if (props.needsSetup || !props.settings.onboarded) {
+    return <Onboarding settings={props.settings} onChange={props.onSettingsChange} />;
+  }
+  return <Dashboard {...props} />;
+}
+
+function Onboarding({ settings, onChange }: { settings: AppSettings; onChange: (settings: AppSettings) => void }) {
+  const [verified, setVerified] = useState(false);
 
   return (
-    <main className="content home-content">
-      <section className="hero" data-tauri-drag-region>
-        <div data-tauri-drag-region>
-          <h1>GloriousEvolution</h1>
-          <p>
-            {isMissingConfig ? "开始使用前需要先填写 API Key。" : "按快捷键开始或停止语音输入，也可以使用下方按钮。"}
-            {!isMissingConfig ? <kbd>{shortcut}</kbd> : null}
-          </p>
-        </div>
-        <div className="hero-controls" aria-hidden="true" data-tauri-drag-region>
-          <span />
-          <span />
-          <span />
-        </div>
-      </section>
+    <section className="page onboarding">
+      <div className="onboarding-head">
+        <span className="eyebrow">欢迎使用</span>
+        <h1>说话，文字就出现在光标处</h1>
+        <p>
+          在任何应用里按下快捷键开始说话，再按一次结束。GloriousEvolution 会识别语音、去掉口头禅和重复，润色后直接输入到当前输入框。
+        </p>
+      </div>
 
-      <section className="current-flow">
-        <article className="record-card">
-          <div className="record-icon">
-            {isRecording ? <Square size={34} /> : <Mic size={38} />}
-          </div>
+      <ol className="steps">
+        <li>
+          <span className="step-index">1</span>
           <div>
-            <h2>{isMissingConfig ? "请先填写 API Key" : isProcessing ? "正在处理语音" : isRecording ? "正在录音" : "准备语音输入"}</h2>
-            <p>{missingConfig || statusMessage}</p>
+            <strong>准备 OpenRouter API Key</strong>
+            <p>在 openrouter.ai 注册并充值少量余额（$5 通常够用几个月），创建一个 Key。</p>
           </div>
-          <button type="button" onClick={isMissingConfig ? onOpenSettings : onToggleRecording} disabled={isProcessing}>
-            {isMissingConfig ? "去设置填写" : isRecording ? "结束录音" : isProcessing ? "处理中..." : "开始录音"}
-          </button>
-        </article>
-
-        <article className="real-stat-card">
-          <Clock size={19} />
-          <strong>{formatDuration(totalSeconds)}</strong>
-          <span>本次运行总口述时间</span>
-        </article>
-
-        <article className="real-stat-card">
-          <Type size={19} />
-          <strong>{totalWords}</strong>
-          <span>本次运行输出字数</span>
-        </article>
-
-        <article className="real-stat-card">
-          <Keyboard size={19} />
-          <strong>{shortcut}</strong>
-          <span>全局快捷键</span>
-        </article>
-      </section>
-
-      <section className="last-result">
-        <h2>最近一次识别</h2>
-        {lastRawText || lastOptimizedText ? (
-          <div className="result-grid">
-            <article>
-              <span>原始文本</span>
-              <p>{lastRawText}</p>
-            </article>
-            <article>
-              <span>优化后</span>
-              <p>{lastOptimizedText}</p>
-            </article>
+        </li>
+        <li>
+          <span className="step-index">2</span>
+          <div className="step-body">
+            <strong>粘贴 Key 并测试</strong>
+            <ApiKeyField
+              settings={settings}
+              onChange={onChange}
+              onVerified={() => setVerified(true)}
+              autoFocus
+            />
           </div>
-        ) : (
-          <p className="empty-result">还没有语音输入记录。按快捷键开始第一段录音。</p>
-        )}
-      </section>
-    </main>
+        </li>
+        <li>
+          <span className="step-index">3</span>
+          <div>
+            <strong>
+              试一试：按 <kbd>{settings.shortcut}</kbd> 开始说话
+            </strong>
+            <p>
+              {settings.recordMode === "hold" ? "按住说话，松开结束。" : "再按一次结束，Esc 取消。"}
+              快捷键和其它选项可在「设置」中修改。
+            </p>
+          </div>
+        </li>
+      </ol>
+
+      <div className="onboarding-actions">
+        <button
+          type="button"
+          className="button primary large"
+          disabled={!settings.apiKey || !verified}
+          onClick={() => onChange({ ...settings, onboarded: true })}
+        >
+          <Check size={17} />
+          开始使用
+        </button>
+        {!verified ? <span className="muted">测试连接成功后即可开始</span> : null}
+      </div>
+    </section>
   );
 }
 
-function formatDuration(seconds: number) {
-  if (seconds < 60) {
-    return `${seconds}s`;
+function Dashboard({
+  settings,
+  recordingStatus,
+  statusMessage,
+  lastResult,
+  latency,
+  stats,
+  latestEntry,
+  onToggleRecording,
+}: HomeDashboardProps) {
+  const [copied, setCopied] = useState(false);
+  const isRecording = recordingStatus === "recording";
+  const isProcessing = recordingStatus === "processing";
+  const isError = recordingStatus === "error";
+  const minutesSaved = estimateMinutesSaved(stats.totalWords, stats.totalSeconds);
+  const latest = lastResult
+    ? { raw: lastResult.rawText, text: lastResult.optimizedText }
+    : latestEntry
+      ? { raw: latestEntry.rawText, text: latestEntry.text }
+      : null;
+
+  async function copyLast() {
+    if (!latest) {
+      return;
+    }
+    await invoke("copy_text", { text: latest.text });
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
   }
 
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  if (minutes < 60) {
-    return `${minutes}m ${rest}s`;
-  }
+  const headline = isRecording ? "正在聆听…" : isProcessing ? "正在处理…" : "准备就绪";
+  const hint =
+    settings.recordMode === "hold"
+      ? "在任意应用中按住快捷键说话，松开后文字会输入到光标处。"
+      : "在任意应用中按一次快捷键开始说话，再按一次结束，Esc 取消。";
 
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ${minutes % 60}m`;
+  return (
+    <section className="page home">
+      <div className={`record-panel ${recordingStatus}`}>
+        <button
+          type="button"
+          className="record-button"
+          onClick={onToggleRecording}
+          disabled={isProcessing}
+          aria-label={isRecording ? "结束录音" : "开始录音"}
+        >
+          {isRecording ? <Square size={26} /> : <Mic size={30} />}
+        </button>
+        <div className="record-copy">
+          <h1>{headline}</h1>
+          <p>{hint}</p>
+          <div className="shortcut-chip">
+            快捷键 <kbd>{settings.shortcut}</kbd>
+          </div>
+        </div>
+      </div>
+
+      {isError && statusMessage ? (
+        <div className="notice danger">
+          <AlertTriangle size={16} />
+          <span>{statusMessage}</span>
+        </div>
+      ) : null}
+      {lastResult?.warning ? (
+        <div className="notice warning">
+          <AlertTriangle size={16} />
+          <span>{lastResult.warning}</span>
+        </div>
+      ) : null}
+
+      <div className="stats-row">
+        <Stat icon={<Clock size={16} />} value={formatDuration(stats.totalSeconds)} label="累计口述" />
+        <Stat icon={<Type size={16} />} value={stats.totalWords.toLocaleString()} label="累计字数" />
+        <Stat icon={<Timer size={16} />} value={`${minutesSaved} 分钟`} label="估计节省打字时间" />
+        <Stat icon={<Sparkles size={16} />} value={stats.totalSessions.toLocaleString()} label="语音输入次数" />
+      </div>
+
+      <div className="card last-result">
+        <div className="card-head">
+          <h2>最近一次</h2>
+          {latency ? <span className="muted small">用时 {(latency.totalMs / 1000).toFixed(1)} 秒</span> : null}
+          {latest ? (
+            <button type="button" className="button ghost small" onClick={() => void copyLast()}>
+              {copied ? <Check size={14} /> : <Copy size={14} />}
+              {copied ? "已复制" : "复制"}
+            </button>
+          ) : null}
+        </div>
+        {latest ? (
+          <div className="result-grid">
+            <article>
+              <span className="label">识别原文</span>
+              <p>{latest.raw}</p>
+            </article>
+            <article className="accent">
+              <span className="label">最终输出</span>
+              <p>{latest.text}</p>
+            </article>
+          </div>
+        ) : (
+          <p className="empty">还没有记录。切换到任意输入框，按下 {settings.shortcut} 试试。</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function Stat({ icon, value, label }: { icon: ReactNode; value: string; label: string }) {
+  return (
+    <div className="card stat">
+      <span className="stat-icon">{icon}</span>
+      <strong>{value}</strong>
+      <span className="muted small">{label}</span>
+    </div>
+  );
 }
