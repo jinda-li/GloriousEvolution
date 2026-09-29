@@ -3,6 +3,7 @@ name = "sayso"
 version = "0.3.0"
 description = "Sayso: voice typing for any Windows app, powered by OpenRouter."
 authors = ["Jinda Li"]
+license = "MIT"
 edition = "2021"
 
 [lib]

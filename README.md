@@ -6,12 +6,13 @@
 
 **Just say so.** Press a hotkey, speak, and clean, polished text appears at your cursor, in any Windows app.
 
-Sayso is free. **Bring your own [OpenRouter](https://openrouter.ai) key**: no Sayso account, no subscription, you only pay OpenRouter for what you use.
+Free and open source (MIT). **Bring your own [OpenRouter](https://openrouter.ai) key**: no Sayso account, no subscription, you only pay OpenRouter for what you use.
 
 [![Latest release](https://img.shields.io/github/v/release/jinda-li/Sayso?label=release&color=2f8f7f)](https://github.com/jinda-li/Sayso/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/jinda-li/Sayso/total?color=2f8f7f)](https://github.com/jinda-li/Sayso/releases)
 ![Windows 10 / 11](https://img.shields.io/badge/Windows-10%20%7C%2011-2f8f7f?logo=windows)
 ![8 languages](https://img.shields.io/badge/UI-8%20languages-e08a45)
+[![MIT license](https://img.shields.io/github/license/jinda-li/Sayso?color=2f8f7f)](LICENSE)
 
 <a href="https://github.com/jinda-li/Sayso/releases/latest"><img src="https://img.shields.io/badge/Download%20for%20Windows-Sayso%200.3.0-2f8f7f?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows" height="44" /></a>
 
@@ -145,3 +146,7 @@ npm run tauri build    # NSIS installer in src-tauri/target/release/bundle/nsis
 `npm run dev` alone serves the UI in a browser with a mocked backend. Add `?lang=ja` (or any supported locale) to preview a language.
 
 Translations live in [`src/i18n/locales`](src/i18n/locales) (UI) and [`src-tauri/src/i18n.rs`](src-tauri/src/i18n.rs) (errors, progress and tray). Pull requests for new languages are welcome.
+
+## License
+
+[MIT](LICENSE) © Jinda Li

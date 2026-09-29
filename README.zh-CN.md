@@ -6,12 +6,13 @@
 
 **说到，就写到。** 按下快捷键开口说话，干净通顺的文字直接出现在光标处。适用于任何 Windows 应用。
 
-Sayso 免费。**使用你自己的 [OpenRouter](https://openrouter.ai) Key**：无需注册 Sayso 账号，没有订阅费，只按实际用量向 OpenRouter 付费。
+免费开源（MIT 许可证）。**使用你自己的 [OpenRouter](https://openrouter.ai) Key**：无需注册 Sayso 账号，没有订阅费，只按实际用量向 OpenRouter 付费。
 
 [![最新版本](https://img.shields.io/github/v/release/jinda-li/Sayso?label=release&color=2f8f7f)](https://github.com/jinda-li/Sayso/releases/latest)
 [![下载量](https://img.shields.io/github/downloads/jinda-li/Sayso/total?color=2f8f7f)](https://github.com/jinda-li/Sayso/releases)
 ![Windows 10 / 11](https://img.shields.io/badge/Windows-10%20%7C%2011-2f8f7f?logo=windows)
 ![8 种语言](https://img.shields.io/badge/UI-8%20languages-e08a45)
+[![MIT 许可证](https://img.shields.io/github/license/jinda-li/Sayso?color=2f8f7f)](LICENSE)
 
 <a href="https://github.com/jinda-li/Sayso/releases/latest"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD%20Windows%20%E7%89%88-Sayso%200.3.0-2f8f7f?style=for-the-badge&logo=windows&logoColor=white" alt="下载 Windows 版" height="44" /></a>
 
@@ -145,3 +146,7 @@ npm run tauri build    # 生成 NSIS 安装包：src-tauri/target/release/bundle
 单独运行 `npm run dev` 可在浏览器中预览界面（后端为模拟数据），加上 `?lang=ja` 等参数可预览对应语言。
 
 翻译文件位于 [`src/i18n/locales`](src/i18n/locales)（界面）和 [`src-tauri/src/i18n.rs`](src-tauri/src/i18n.rs)（错误提示、进度和托盘菜单），欢迎提交新语言。
+
+## 许可证
+
+[MIT](LICENSE) © Jinda Li
