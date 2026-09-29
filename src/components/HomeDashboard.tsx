@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { SaveState } from "../App";
+import { useT } from "../i18n";
 import type {
   AppSettings,
   HistoryEntry,
@@ -43,46 +44,38 @@ export function HomeDashboard(props: HomeDashboardProps) {
 
 function Onboarding({ settings, onChange }: { settings: AppSettings; onChange: (settings: AppSettings) => void }) {
   const [verified, setVerified] = useState(false);
+  const t = useT();
 
   return (
     <section className="page onboarding">
       <div className="onboarding-head">
-        <span className="eyebrow">欢迎使用</span>
-        <h1>说话，文字就出现在光标处</h1>
-        <p>
-          在任何应用里按下快捷键开始说话，再按一次结束。GloriousEvolution 会识别语音、去掉口头禅和重复，润色后直接输入到当前输入框。
-        </p>
+        <span className="eyebrow">{t("onboarding.eyebrow")}</span>
+        <h1>{t("onboarding.title")}</h1>
+        <p>{t("onboarding.intro")}</p>
       </div>
 
       <ol className="steps">
         <li>
           <span className="step-index">1</span>
           <div>
-            <strong>准备 OpenRouter API Key</strong>
-            <p>在 openrouter.ai 注册并充值少量余额（$5 通常够用几个月），创建一个 Key。</p>
+            <strong>{t("onboarding.step1.title")}</strong>
+            <p>{t("onboarding.step1.body")}</p>
           </div>
         </li>
         <li>
           <span className="step-index">2</span>
           <div className="step-body">
-            <strong>粘贴 Key 并测试</strong>
-            <ApiKeyField
-              settings={settings}
-              onChange={onChange}
-              onVerified={() => setVerified(true)}
-              autoFocus
-            />
+            <strong>{t("onboarding.step2.title")}</strong>
+            <ApiKeyField settings={settings} onChange={onChange} onVerified={() => setVerified(true)} autoFocus />
           </div>
         </li>
         <li>
           <span className="step-index">3</span>
           <div>
-            <strong>
-              试一试：按 <kbd>{settings.shortcut}</kbd> 开始说话
-            </strong>
+            <strong>{t.rich("onboarding.step3.title", { shortcut: <kbd>{settings.shortcut}</kbd> })}</strong>
             <p>
-              {settings.recordMode === "hold" ? "按住说话，松开结束。" : "再按一次结束，Esc 取消。"}
-              快捷键和其它选项可在「设置」中修改。
+              {settings.recordMode === "hold" ? t("onboarding.step3.hold") : t("onboarding.step3.toggle")}{" "}
+              {t("onboarding.step3.more")}
             </p>
           </div>
         </li>
@@ -96,9 +89,9 @@ function Onboarding({ settings, onChange }: { settings: AppSettings; onChange: (
           onClick={() => onChange({ ...settings, onboarded: true })}
         >
           <Check size={17} />
-          开始使用
+          {t("onboarding.start")}
         </button>
-        {!verified ? <span className="muted">测试连接成功后即可开始</span> : null}
+        {!verified ? <span className="muted">{t("onboarding.testFirst")}</span> : null}
       </div>
     </section>
   );
@@ -115,6 +108,7 @@ function Dashboard({
   onToggleRecording,
 }: HomeDashboardProps) {
   const [copied, setCopied] = useState(false);
+  const t = useT();
   const isRecording = recordingStatus === "recording";
   const isProcessing = recordingStatus === "processing";
   const isError = recordingStatus === "error";
@@ -134,11 +128,8 @@ function Dashboard({
     window.setTimeout(() => setCopied(false), 1500);
   }
 
-  const headline = isRecording ? "正在聆听…" : isProcessing ? "正在处理…" : "准备就绪";
-  const hint =
-    settings.recordMode === "hold"
-      ? "在任意应用中按住快捷键说话，松开后文字会输入到光标处。"
-      : "在任意应用中按一次快捷键开始说话，再按一次结束，Esc 取消。";
+  const headline = isRecording ? t("home.listening") : isProcessing ? t("home.processing") : t("home.ready");
+  const hint = settings.recordMode === "hold" ? t("home.hint.hold") : t("home.hint.toggle");
 
   return (
     <section className="page home">
@@ -148,7 +139,7 @@ function Dashboard({
           className="record-button"
           onClick={onToggleRecording}
           disabled={isProcessing}
-          aria-label={isRecording ? "结束录音" : "开始录音"}
+          aria-label={isRecording ? t("home.stopRecording") : t("home.startRecording")}
         >
           {isRecording ? <Square size={26} /> : <Mic size={30} />}
         </button>
@@ -156,7 +147,7 @@ function Dashboard({
           <h1>{headline}</h1>
           <p>{hint}</p>
           <div className="shortcut-chip">
-            快捷键 <kbd>{settings.shortcut}</kbd>
+            {t("home.shortcut")} <kbd>{settings.shortcut}</kbd>
           </div>
         </div>
       </div>
@@ -175,36 +166,46 @@ function Dashboard({
       ) : null}
 
       <div className="stats-row">
-        <Stat icon={<Clock size={16} />} value={formatDuration(stats.totalSeconds)} label="累计口述" />
-        <Stat icon={<Type size={16} />} value={stats.totalWords.toLocaleString()} label="累计字数" />
-        <Stat icon={<Timer size={16} />} value={`${minutesSaved} 分钟`} label="估计节省打字时间" />
-        <Stat icon={<Sparkles size={16} />} value={stats.totalSessions.toLocaleString()} label="语音输入次数" />
+        <Stat icon={<Clock size={16} />} value={formatDuration(stats.totalSeconds, t)} label={t("stats.spoken")} />
+        <Stat icon={<Type size={16} />} value={stats.totalWords.toLocaleString(t.locale)} label={t("stats.words")} />
+        <Stat
+          icon={<Timer size={16} />}
+          value={t("stats.minutes", { n: minutesSaved.toLocaleString(t.locale) })}
+          label={t("stats.saved")}
+        />
+        <Stat
+          icon={<Sparkles size={16} />}
+          value={stats.totalSessions.toLocaleString(t.locale)}
+          label={t("stats.sessions")}
+        />
       </div>
 
       <div className="card last-result">
         <div className="card-head">
-          <h2>最近一次</h2>
-          {latency ? <span className="muted small">用时 {(latency.totalMs / 1000).toFixed(1)} 秒</span> : null}
+          <h2>{t("home.latest")}</h2>
+          {latency ? (
+            <span className="muted small">{t("home.took", { s: (latency.totalMs / 1000).toFixed(1) })}</span>
+          ) : null}
           {latest ? (
             <button type="button" className="button ghost small" onClick={() => void copyLast()}>
               {copied ? <Check size={14} /> : <Copy size={14} />}
-              {copied ? "已复制" : "复制"}
+              {copied ? t("common.copied") : t("common.copy")}
             </button>
           ) : null}
         </div>
         {latest ? (
           <div className="result-grid">
             <article>
-              <span className="label">识别原文</span>
+              <span className="label">{t("home.raw")}</span>
               <p>{latest.raw}</p>
             </article>
             <article className="accent">
-              <span className="label">最终输出</span>
+              <span className="label">{t("home.final")}</span>
               <p>{latest.text}</p>
             </article>
           </div>
         ) : (
-          <p className="empty">还没有记录。切换到任意输入框，按下 {settings.shortcut} 试试。</p>
+          <p className="empty">{t("home.empty", { shortcut: settings.shortcut })}</p>
         )}
       </div>
     </section>

@@ -160,12 +160,9 @@ kbd {
 }
 
 .brand-mark {
-  width: 18px;
-  height: 18px;
-  border-radius: 6px;
-  background:
-    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.55), transparent 55%),
-    linear-gradient(135deg, #4dbba7, #2f8f7f 60%, #e2a36b);
+  width: 20px;
+  height: 20px;
+  pointer-events: none;
 }
 
 .titlebar-actions {
@@ -240,7 +237,8 @@ kbd {
 
 .sidebar-footer {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 2px;
   padding: 0 12px;
   color: var(--text-3);
   font-size: 12px;

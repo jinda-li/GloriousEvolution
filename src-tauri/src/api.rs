@@ -3,7 +3,11 @@ use std::{sync::OnceLock, time::Duration};
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::{settings::AppSettings, AppError, AppResult};
+use crate::{
+    i18n::{self, tr, trf},
+    settings::AppSettings,
+    AppError, AppResult,
+};
 
 const MAX_ATTEMPTS: usize = 2;
 
@@ -15,7 +19,7 @@ pub fn client() -> &'static reqwest::Client {
             .timeout(Duration::from_secs(120))
             .pool_idle_timeout(Duration::from_secs(90))
             .tcp_keepalive(Duration::from_secs(30))
-            .user_agent(concat!("GloriousEvolution/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("Sayso/", env!("CARGO_PKG_VERSION")))
             .build()
             .expect("failed to build HTTP client")
     })
@@ -25,8 +29,8 @@ pub fn authorized(builder: RequestBuilder, settings: &AppSettings) -> RequestBui
     let mut builder = builder.bearer_auth(settings.api_key.trim());
     if settings.is_openrouter() {
         builder = builder
-            .header("HTTP-Referer", "https://github.com/glorious-evolution")
-            .header("X-Title", "GloriousEvolution");
+            .header("HTTP-Referer", "https://github.com/jinda-li/Sayso")
+            .header("X-Title", "Sayso");
     }
     builder
 }
@@ -67,16 +71,16 @@ pub async fn parse_json<T: DeserializeOwned>(response: Response, stage: &str) ->
     response
         .json::<T>()
         .await
-        .map_err(|error| AppError::Api(format!("{stage}返回了无法解析的数据：{error}")))
+        .map_err(|error| AppError::Api(trf(&i18n::PARSE_FAILED, &[&stage, &error])))
 }
 
 fn network_error(error: reqwest::Error) -> AppError {
     if error.is_timeout() {
-        AppError::Api("网络请求超时，请检查网络后重试。".to_string())
+        AppError::Api(tr(&i18n::NET_TIMEOUT).to_string())
     } else if error.is_connect() {
-        AppError::Api("无法连接到服务器，请检查网络或代理设置。".to_string())
+        AppError::Api(tr(&i18n::NET_CONNECT).to_string())
     } else {
-        AppError::Api(format!("网络请求失败：{error}"))
+        AppError::Api(trf(&i18n::NET_FAILED, &[&error]))
     }
 }
 
@@ -98,15 +102,15 @@ fn describe_failure(stage: &str, status: StatusCode, body: &str) -> String {
         .unwrap_or_else(|| body.chars().take(200).collect());
 
     let hint = match status.as_u16() {
-        401 => "API Key 无效或已被删除，请在设置中重新填写。".to_string(),
-        402 => "OpenRouter 余额不足。语音识别要求账户余额至少 $0.50，请前往 openrouter.ai/settings/credits 充值。".to_string(),
-        403 => format!("请求被拒绝（可能触发了内容审核或 Key 权限限制）：{detail}"),
-        404 => format!("找不到模型或接口，请检查模型名称：{detail}"),
-        408 | 504 => "上游模型响应超时，请稍后重试或换一个更快的模型。".to_string(),
-        429 => "请求过于频繁或免费额度已用完，请稍后重试。".to_string(),
+        401 => tr(&i18n::HTTP_401).to_string(),
+        402 => tr(&i18n::HTTP_402).to_string(),
+        403 => trf(&i18n::HTTP_403, &[&detail]),
+        404 => trf(&i18n::HTTP_404, &[&detail]),
+        408 | 504 => tr(&i18n::HTTP_TIMEOUT).to_string(),
+        429 => tr(&i18n::HTTP_429).to_string(),
         _ => format!("{} {detail}", status.as_u16()),
     };
-    format!("{stage}失败：{hint}")
+    trf(&i18n::STAGE_FAILED, &[&stage, &hint])
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -139,7 +143,7 @@ struct KeyData {
 
 pub async fn check_key(settings: &AppSettings) -> AppResult<KeyStatus> {
     if settings.api_key.trim().is_empty() {
-        return Err(AppError::Config("请先填写 OpenRouter API Key。".to_string()));
+        return Err(AppError::Config(tr(&i18n::NEED_KEY).to_string()));
     }
 
     let base_url = settings.base_url();
@@ -151,9 +155,9 @@ pub async fn check_key(settings: &AppSettings) -> AppResult<KeyStatus> {
     let response = send_with_retry(|| authorized(client().get(&url), settings)).await?;
 
     if !settings.is_openrouter() {
-        let _: serde_json::Value = parse_json(response, "连接测试").await?;
+        let _: serde_json::Value = parse_json(response, tr(&i18n::STAGE_TEST)).await?;
         return Ok(KeyStatus {
-            label: "自定义接口".to_string(),
+            label: tr(&i18n::CUSTOM_ENDPOINT).to_string(),
             usage: 0.0,
             limit: None,
             limit_remaining: None,
@@ -162,7 +166,7 @@ pub async fn check_key(settings: &AppSettings) -> AppResult<KeyStatus> {
         });
     }
 
-    let envelope: KeyEnvelope = parse_json(response, "连接测试").await?;
+    let envelope: KeyEnvelope = parse_json(response, tr(&i18n::STAGE_TEST)).await?;
     let credits_remaining = fetch_credits(settings, &base_url).await;
     Ok(KeyStatus {
         label: envelope.data.label,

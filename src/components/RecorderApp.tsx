@@ -1,8 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Check, Copy, Loader2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { createTranslator, resolveLocale } from "../i18n";
 import type {
   AppSettings,
   AudioLevelEvent,
@@ -26,6 +27,7 @@ export function RecorderApp() {
   const [copied, setCopied] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [levels, setLevels] = useState<number[]>(() => Array(BAR_COUNT).fill(0));
+  const [uiLanguage, setUiLanguage] = useState("auto");
   const soundEnabled = useRef(true);
   const startedAt = useRef(Date.now());
   const statusRef = useRef<RecordingStatus>("idle");
@@ -34,6 +36,7 @@ export function RecorderApp() {
     document.documentElement.classList.add("recorder-window");
     void invoke<AppSettings>("load_settings").then((settings) => {
       soundEnabled.current = settings.soundEnabled;
+      setUiLanguage(settings.uiLanguage ?? "auto");
     });
 
     const play = (sound: () => void) => {
@@ -78,6 +81,7 @@ export function RecorderApp() {
       listen<TextPreviewEvent>("text-preview", (event) => setPreviewText(event.payload.text)),
       listen<AppSettings>("settings-changed", (event) => {
         soundEnabled.current = event.payload.soundEnabled;
+        setUiLanguage(event.payload.uiLanguage ?? "auto");
       }),
     ];
 
@@ -103,6 +107,7 @@ export function RecorderApp() {
     return () => window.clearTimeout(timer);
   }, [status, message]);
 
+  const t = useMemo(() => createTranslator(resolveLocale(uiLanguage)), [uiLanguage]);
   const isRecording = status === "recording";
   const isProcessing = status === "processing";
   const isError = status === "error";
@@ -133,14 +138,20 @@ export function RecorderApp() {
   return (
     <div className="recorder-shell" data-tauri-drag-region>
       <div className={`recorder-pill ${status}`} title={message} data-tauri-drag-region>
-        <button className="pill-button ghost" type="button" onClick={() => void dismiss()} aria-label="取消" disabled={isProcessing}>
+        <button
+          className="pill-button ghost"
+          type="button"
+          onClick={() => void dismiss()}
+          aria-label={t("recorder.cancel")}
+          disabled={isProcessing}
+        >
           <X size={16} />
         </button>
 
         <div className="pill-body" data-tauri-drag-region>
           {isRecording ? (
             <>
-              <div className="wave" aria-label="正在录音" data-tauri-drag-region>
+              <div className="wave" aria-label={t("recorder.recording")} data-tauri-drag-region>
                 {levels.map((level, index) => (
                   <span key={index} style={{ transform: `scaleY(${0.18 + level * 0.82})` }} />
                 ))}
@@ -152,7 +163,7 @@ export function RecorderApp() {
             <div className="pill-processing" data-tauri-drag-region>
               <span className="pill-text">
                 <Loader2 className="spin" size={14} />
-                {phase || "处理中"}
+                {phase || t("recorder.processing")}
               </span>
               <div className="pill-progress">
                 <span style={{ width: `${Math.round(progress * 100)}%` }} />
@@ -161,7 +172,7 @@ export function RecorderApp() {
           ) : null}
           {hasPreview ? (
             <div className="pill-preview" data-tauri-drag-region>
-              <span className="pill-caption">{copied ? "已复制，可直接粘贴" : message}</span>
+              <span className="pill-caption">{copied ? t("recorder.copied") : message}</span>
               <span className="pill-text preview">{previewText}</span>
             </div>
           ) : null}
@@ -173,7 +184,7 @@ export function RecorderApp() {
           className="pill-button primary"
           type="button"
           onClick={() => void confirm()}
-          aria-label={hasPreview ? "复制" : "完成"}
+          aria-label={hasPreview ? t("common.copy") : t("recorder.done")}
           disabled={isProcessing}
         >
           {hasPreview && !copied ? <Copy size={15} /> : <Check size={16} />}

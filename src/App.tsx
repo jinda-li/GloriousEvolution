@@ -9,6 +9,7 @@ import { SettingsView } from "./components/SettingsView";
 import { Sidebar, type View } from "./components/Sidebar";
 import { TitleBar } from "./components/TitleBar";
 import { DEFAULT_SETTINGS } from "./constants";
+import { I18nProvider, resolveLocale } from "./i18n";
 import type {
   AppInfo,
   AppSettings,
@@ -43,6 +44,15 @@ function MainApp() {
   const [lastResult, setLastResult] = useState<ProcessResult | null>(null);
   const [latency, setLatency] = useState<LatencyMetricsEvent | null>(null);
   const skipNextSave = useRef(true);
+  const locale = resolveLocale(settings.uiLanguage);
+
+  // The backend localizes errors, progress and the tray menu; keep it in step.
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    if (loaded) {
+      void invoke("set_locale", { locale });
+    }
+  }, [locale, loaded]);
 
   useEffect(() => {
     void Promise.all([
@@ -106,40 +116,42 @@ function MainApp() {
   const needsSetup = loaded && !settings.apiKey.trim();
 
   return (
-    <div className="app-shell">
-      <TitleBar />
-      <div className="app-body">
-        <Sidebar activeView={view} onViewChange={setView} version={appInfo.version} />
-        <main className="content">
-          {view === "home" ? (
-            <HomeDashboard
-              loaded={loaded}
-              needsSetup={needsSetup}
-              settings={settings}
-              onSettingsChange={setSettings}
-              saveState={saveState}
-              recordingStatus={recordingStatus}
-              statusMessage={statusMessage}
-              lastResult={lastResult}
-              latency={latency}
-              stats={history.stats}
-              latestEntry={history.entries[0] ?? null}
-              onToggleRecording={toggleRecording}
-              onOpenSettings={() => setView("settings")}
-            />
-          ) : null}
-          {view === "history" ? <HistoryView history={history} onHistoryChange={setHistory} /> : null}
-          {view === "settings" ? (
-            <SettingsView
-              settings={settings}
-              defaultSystemPrompt={appInfo.defaultSystemPrompt}
-              saveState={saveState}
-              onChange={setSettings}
-            />
-          ) : null}
-        </main>
+    <I18nProvider locale={locale}>
+      <div className="app-shell">
+        <TitleBar />
+        <div className="app-body">
+          <Sidebar activeView={view} onViewChange={setView} version={appInfo.version} />
+          <main className="content">
+            {view === "home" ? (
+              <HomeDashboard
+                loaded={loaded}
+                needsSetup={needsSetup}
+                settings={settings}
+                onSettingsChange={setSettings}
+                saveState={saveState}
+                recordingStatus={recordingStatus}
+                statusMessage={statusMessage}
+                lastResult={lastResult}
+                latency={latency}
+                stats={history.stats}
+                latestEntry={history.entries[0] ?? null}
+                onToggleRecording={toggleRecording}
+                onOpenSettings={() => setView("settings")}
+              />
+            ) : null}
+            {view === "history" ? <HistoryView history={history} onHistoryChange={setHistory} /> : null}
+            {view === "settings" ? (
+              <SettingsView
+                settings={settings}
+                defaultSystemPrompt={appInfo.defaultSystemPrompt}
+                saveState={saveState}
+                onChange={setSettings}
+              />
+            ) : null}
+          </main>
+        </div>
       </div>
-    </div>
+    </I18nProvider>
   );
 }
 

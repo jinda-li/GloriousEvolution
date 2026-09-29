@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "GloriousEvolution",
-  "version": "0.2.0",
-  "identifier": "com.glorious.evolution",
+  "productName": "Sayso",
+  "version": "0.3.0",
+  "identifier": "com.sayso.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "GloriousEvolution",
+        "title": "Sayso",
         "width": 1180,
         "height": 720,
         "minWidth": 920,
@@ -48,14 +48,25 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "publisher": "GloriousEvolution",
-    "shortDescription": "Voice dictation for any app",
-    "longDescription": "Press a hotkey, speak, and polished text appears in any app. Powered by OpenRouter.",
+    "publisher": "Jinda Li",
+    "copyright": "Copyright (c) 2026 Jinda Li",
+    "homepage": "https://github.com/jinda-li/GloriousEvolution",
+    "shortDescription": "Sayso: voice typing for any app",
+    "longDescription": "Press a hotkey, speak, and clean, polished text appears at your cursor in any app. Powered by OpenRouter.",
     "category": "Productivity",
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "languages": ["SimpChinese", "English"]
+        "languages": [
+          "English",
+          "SimpChinese",
+          "TradChinese",
+          "Japanese",
+          "Korean",
+          "Spanish",
+          "French",
+          "German"
+        ]
       }
     },
     "icon": ["icons/icon.ico", "icons/icon.png"]

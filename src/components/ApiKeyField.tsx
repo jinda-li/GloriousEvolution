@@ -3,6 +3,7 @@ import { Eye, EyeOff, ExternalLink, Loader2, PlugZap } from "lucide-react";
 import { useState } from "react";
 
 import { OPENROUTER_CREDITS_URL, OPENROUTER_KEYS_URL } from "../constants";
+import { useT } from "../i18n";
 import type { AppSettings, KeyStatus } from "../types";
 import { formatUsd } from "../utils/format";
 
@@ -14,10 +15,7 @@ type ApiKeyFieldProps = {
 };
 
 type TestState =
-  | { kind: "idle" }
-  | { kind: "testing" }
-  | { kind: "ok"; status: KeyStatus }
-  | { kind: "error"; message: string };
+  { kind: "idle" } | { kind: "testing" } | { kind: "ok"; status: KeyStatus } | { kind: "error"; message: string };
 
 export function openExternal(url: string) {
   void invoke("open_external", { url });
@@ -26,6 +24,7 @@ export function openExternal(url: string) {
 export function ApiKeyField({ settings, onChange, onVerified, autoFocus }: ApiKeyFieldProps) {
   const [visible, setVisible] = useState(false);
   const [test, setTest] = useState<TestState>({ kind: "idle" });
+  const t = useT();
 
   async function runTest() {
     setTest({ kind: "testing" });
@@ -38,15 +37,14 @@ export function ApiKeyField({ settings, onChange, onVerified, autoFocus }: ApiKe
     }
   }
 
-  const balance =
-    test.kind === "ok" ? test.status.creditsRemaining ?? test.status.limitRemaining : null;
+  const balance = test.kind === "ok" ? (test.status.creditsRemaining ?? test.status.limitRemaining) : null;
 
   return (
     <div className="field">
       <div className="field-label-row">
         <span className="field-label">OpenRouter API Key</span>
         <button type="button" className="link-button" onClick={() => openExternal(OPENROUTER_KEYS_URL)}>
-          获取 Key <ExternalLink size={13} />
+          {t("apiKey.get")} <ExternalLink size={13} />
         </button>
       </div>
       <div className="input-with-actions">
@@ -65,7 +63,7 @@ export function ApiKeyField({ settings, onChange, onVerified, autoFocus }: ApiKe
         <button
           type="button"
           className="icon-button"
-          aria-label={visible ? "隐藏" : "显示"}
+          aria-label={visible ? t("apiKey.hide") : t("apiKey.show")}
           onClick={() => setVisible((value) => !value)}
         >
           {visible ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -77,27 +75,25 @@ export function ApiKeyField({ settings, onChange, onVerified, autoFocus }: ApiKe
           onClick={() => void runTest()}
         >
           {test.kind === "testing" ? <Loader2 className="spin" size={15} /> : <PlugZap size={15} />}
-          测试连接
+          {t("apiKey.test")}
         </button>
       </div>
       {test.kind === "ok" ? (
         <p className="field-hint success">
-          连接成功{test.status.label ? `（${test.status.label}）` : ""}
-          {balance !== null ? ` · 余额 ${formatUsd(balance)}` : ""}
+          {test.status.label ? t("apiKey.okLabel", { label: test.status.label }) : t("apiKey.ok")}
+          {balance !== null ? t("apiKey.balance", { amount: formatUsd(balance) }) : ""}
         </p>
       ) : null}
       {test.kind === "ok" && test.status.creditsRemaining !== null && test.status.creditsRemaining < 0.5 ? (
         <p className="field-hint danger">
-          余额低于 $0.50：OpenRouter 要求至少 $0.50 余额才能处理语音，充值后即可使用。
+          {t("apiKey.lowBalance")}
           <button type="button" className="link-button inline" onClick={() => openExternal(OPENROUTER_CREDITS_URL)}>
-            去充值
+            {t("apiKey.topUp")}
           </button>
         </p>
       ) : null}
       {test.kind === "error" ? <p className="field-hint danger">{test.message}</p> : null}
-      {test.kind === "idle" ? (
-        <p className="field-hint">一个 Key 同时用于语音识别和文本润色。Key 只保存在本机。</p>
-      ) : null}
+      {test.kind === "idle" ? <p className="field-hint">{t("apiKey.hint")}</p> : null}
     </div>
   );
 }

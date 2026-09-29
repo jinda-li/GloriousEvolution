@@ -1,7 +1,12 @@
 use reqwest::multipart;
 use serde::Deserialize;
 
-use crate::{api, settings::AppSettings, AppResult};
+use crate::{
+    api,
+    i18n::{self, tr},
+    settings::AppSettings,
+    AppResult,
+};
 
 #[derive(Debug, Deserialize)]
 struct TranscriptionResponse {
@@ -37,6 +42,6 @@ pub async fn transcribe(wav: Vec<u8>, settings: &AppSettings) -> AppResult<Strin
     })
     .await?;
 
-    let payload: TranscriptionResponse = api::parse_json(response, "语音识别").await?;
+    let payload: TranscriptionResponse = api::parse_json(response, tr(&i18n::STAGE_STT)).await?;
     Ok(payload.text.trim().to_string())
 }

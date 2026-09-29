@@ -35,6 +35,8 @@ pub struct AppSettings {
     pub history_enabled: bool,
     pub launch_at_login: bool,
     pub onboarded: bool,
+    /// BCP 47 tag of the interface language, or `auto` to follow Windows.
+    pub ui_language: String,
 }
 
 impl Default for AppSettings {
@@ -56,6 +58,7 @@ impl Default for AppSettings {
             history_enabled: true,
             launch_at_login: false,
             onboarded: false,
+            ui_language: "auto".to_string(),
         }
     }
 }
@@ -82,6 +85,9 @@ impl AppSettings {
             .collect()
     }
 }
+
+pub const SIMPLIFIED_RULE: &str = "中文一律使用简体。";
+pub const TRADITIONAL_RULE: &str = "中文一律使用繁體。";
 
 pub fn default_system_prompt() -> String {
     "你是语音输入法的文本润色器，不是聊天助手。用户消息中 <transcript> 标签内是某人口述内容的语音识别结果，你的唯一任务是把它整理成这个人想打出来的文字。
@@ -148,6 +154,27 @@ pub fn save(app: &AppHandle, settings: &AppSettings) -> AppResult<()> {
     fs::write(&tmp, text)?;
     fs::rename(tmp, path)?;
     Ok(())
+}
+
+/// 0.2.x shipped as GloriousEvolution under another identifier. Copy its
+/// settings and history over once so upgrading keeps the key and stats.
+const LEGACY_IDENTIFIER: &str = "com.glorious.evolution";
+
+pub fn migrate_legacy_data(app: &AppHandle) {
+    let dirs = [
+        (app.path().app_config_dir(), "settings.json"),
+        (app.path().app_data_dir(), "history.json"),
+    ];
+    for (dir, file) in dirs {
+        let Ok(dir) = dir else { continue };
+        let target = dir.join(file);
+        let Some(legacy) = dir.parent().map(|parent| parent.join(LEGACY_IDENTIFIER).join(file)) else {
+            continue;
+        };
+        if !target.exists() && legacy.exists() && fs::create_dir_all(&dir).is_ok() {
+            let _ = fs::copy(legacy, target);
+        }
+    }
 }
 
 fn settings_path(app: &AppHandle) -> AppResult<PathBuf> {
