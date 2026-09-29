@@ -6,6 +6,8 @@
 
 **Just say so.** Press a hotkey, speak, and clean, polished text appears at your cursor, in any Windows app.
 
+Sayso is free. **Bring your own [OpenRouter](https://openrouter.ai) key**: no Sayso account, no subscription, you only pay OpenRouter for what you use.
+
 [![Latest release](https://img.shields.io/github/v/release/jinda-li/Sayso?label=release&color=2f8f7f)](https://github.com/jinda-li/Sayso/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/jinda-li/Sayso/total?color=2f8f7f)](https://github.com/jinda-li/Sayso/releases)
 ![Windows 10 / 11](https://img.shields.io/badge/Windows-10%20%7C%2011-2f8f7f?logo=windows)
@@ -33,7 +35,7 @@ You ramble, backtrack and say "um". Sayso keeps what you meant and drops the res
 | **Your words, your spelling** | A personal dictionary makes names, products and jargon come out right every time. |
 | **Nothing lost** | If polishing fails, you still get the raw transcript. No text field focused? A floating pill offers one-click copy. |
 | **Private by default** | Audio stays in memory and is never written to disk. History lives only on your PC, and you can turn it off. |
-| **Cheap** | Usually well under **$0.01 per minute** of dictation, pay-as-you-go through a single OpenRouter key. |
+| **Your own OpenRouter account** | Sayso has no servers and no subscription. It calls OpenRouter directly with *your* API key, billed pay-as-you-go to *your* OpenRouter credit: usually well under **$0.01 per minute** of dictation. |
 
 ## Screenshots
 
@@ -82,6 +84,8 @@ The interface is available in **English, 简体中文, 繁體中文, 日本語, 
 
 ## Get started in 60 seconds
 
+You need your own OpenRouter account with a little credit. Sayso itself is free.
+
 1. **Download** `Sayso_0.3.0_x64-setup.exe` from the [latest release](https://github.com/jinda-li/Sayso/releases/latest) and run it. No admin rights needed. Prefer no installer? Grab the portable `.zip` instead.
 2. **Create a key** at [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) and add a few dollars of credit.
 3. **Paste the key** into Sayso, click **Test connection**, then **Get started**.
@@ -96,7 +100,7 @@ The interface is available in **English, 简体中文, 繁體中文, 日本語, 
 Alt+Q ──▶ 16 kHz mic capture (in memory) ──▶ speech-to-text ──▶ polish with an LLM ──▶ typed at your cursor
 ```
 
-Everything runs on one [OpenRouter](https://openrouter.ai) key:
+Everything runs on your own [OpenRouter](https://openrouter.ai) key. Audio and text go straight from your PC to OpenRouter; there is no Sayso server in between, and usage shows up on your OpenRouter dashboard.
 
 - **Speech-to-text** via `/api/v1/audio/transcriptions`. Default `openai/gpt-4o-mini-transcribe`; Qwen3 ASR, Whisper, Gemini, Voxtral and Deepgram are one click away.
 - **Polishing** via `/api/v1/chat/completions`. Default `google/gemini-3.1-flash-lite` (about half a second); Claude Haiku, GPT-4.1 mini and Qwen are also built in, or type any model id.
