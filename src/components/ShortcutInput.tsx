@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 
+import { useT } from "../i18n";
 import { keyboardEventPreview, keyboardEventToShortcut } from "../utils/shortcut";
 
 type ShortcutInputProps = {
@@ -12,6 +13,7 @@ export function ShortcutInput({ value, onChange }: ShortcutInputProps) {
   const [listening, setListening] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const t = useT();
 
   useEffect(() => {
     if (!listening) {
@@ -73,7 +75,7 @@ export function ShortcutInput({ value, onChange }: ShortcutInputProps) {
     };
   }, [listening]);
 
-  const displayValue = listening ? preview ?? "请按下快捷键…" : value || "未设置";
+  const displayValue = listening ? (preview ?? t("shortcut.press")) : value || t("shortcut.unset");
 
   return (
     <button
@@ -87,7 +89,7 @@ export function ShortcutInput({ value, onChange }: ShortcutInputProps) {
       }}
     >
       <span>{displayValue}</span>
-      {listening ? <span className="shortcut-input-hint">Esc 取消</span> : null}
+      {listening ? <span className="shortcut-input-hint">{t("shortcut.escCancel")}</span> : null}
     </button>
   );
 }

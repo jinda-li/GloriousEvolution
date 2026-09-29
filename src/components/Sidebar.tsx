@@ -1,5 +1,8 @@
 import { History, Home, Settings } from "lucide-react";
 
+import { useT } from "../i18n";
+import type { MessageKey } from "../i18n";
+
 export type View = "home" | "history" | "settings";
 
 type SidebarProps = {
@@ -8,13 +11,14 @@ type SidebarProps = {
   onViewChange: (view: View) => void;
 };
 
-const navItems: Array<{ id: View; label: string; icon: typeof Home }> = [
-  { id: "home", label: "首页", icon: Home },
-  { id: "history", label: "历史记录", icon: History },
-  { id: "settings", label: "设置", icon: Settings },
+const navItems: Array<{ id: View; label: MessageKey; icon: typeof Home }> = [
+  { id: "home", label: "nav.home", icon: Home },
+  { id: "history", label: "nav.history", icon: History },
+  { id: "settings", label: "nav.settings", icon: Settings },
 ];
 
 export function Sidebar({ activeView, version, onViewChange }: SidebarProps) {
+  const t = useT();
   return (
     <aside className="sidebar">
       <nav className="nav-list">
@@ -28,13 +32,13 @@ export function Sidebar({ activeView, version, onViewChange }: SidebarProps) {
               type="button"
             >
               <Icon size={17} />
-              <span>{item.label}</span>
+              <span>{t(item.label)}</span>
             </button>
           );
         })}
       </nav>
       <div className="sidebar-footer">
-        <span>OpenRouter 驱动</span>
+        <span>{t("sidebar.poweredBy")}</span>
         {version ? <span>v{version}</span> : null}
       </div>
     </aside>

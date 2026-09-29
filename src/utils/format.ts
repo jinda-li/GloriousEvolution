@@ -1,14 +1,16 @@
-export function formatDuration(totalSeconds: number) {
+import type { Translate } from "../i18n";
+
+export function formatDuration(totalSeconds: number, t: Translate) {
   const seconds = Math.round(totalSeconds);
   if (seconds < 60) {
-    return `${seconds} 秒`;
+    return t("time.seconds", { s: seconds });
   }
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) {
-    return `${minutes} 分 ${seconds % 60} 秒`;
+    return t("time.minutes", { m: minutes, s: seconds % 60 });
   }
   const hours = Math.floor(minutes / 60);
-  return `${hours} 小时 ${minutes % 60} 分`;
+  return t("time.hours", { h: hours, m: minutes % 60 });
 }
 
 export function formatClock(totalSeconds: number) {
@@ -18,20 +20,19 @@ export function formatClock(totalSeconds: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function formatTime(timestamp: number) {
+export function formatTime(timestamp: number, t: Translate) {
   const date = new Date(timestamp);
   const now = new Date();
-  const sameDay = date.toDateString() === now.toDateString();
-  const time = date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-  if (sameDay) {
-    return `今天 ${time}`;
+  const time = date.toLocaleTimeString(t.locale, { hour: "2-digit", minute: "2-digit" });
+  if (date.toDateString() === now.toDateString()) {
+    return t("time.today", { time });
   }
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
   if (date.toDateString() === yesterday.toDateString()) {
-    return `昨天 ${time}`;
+    return t("time.yesterday", { time });
   }
-  return `${date.getMonth() + 1}月${date.getDate()}日 ${time}`;
+  return `${date.toLocaleDateString(t.locale, { month: "short", day: "numeric" })} ${time}`;
 }
 
 export function formatUsd(value: number | null | undefined) {

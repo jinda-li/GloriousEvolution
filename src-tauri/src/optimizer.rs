@@ -1,7 +1,12 @@
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::{api, settings::AppSettings, AppResult};
+use crate::{
+    api,
+    i18n::{self, tr, Locale},
+    settings::{self, AppSettings},
+    AppResult,
+};
 
 #[derive(Debug, Serialize)]
 struct ChatMessage {
@@ -33,6 +38,10 @@ pub async fn optimize(raw_text: &str, settings: &AppSettings) -> AppResult<Strin
 
     let base_url = settings.base_url();
     let mut system_prompt = settings.system_prompt.trim().to_string();
+    if i18n::current() == Locale::ZhTw && system_prompt == settings::default_system_prompt().trim() {
+        // The built-in prompt asks for Simplified Chinese; Traditional users want the opposite.
+        system_prompt = system_prompt.replace(settings::SIMPLIFIED_RULE, settings::TRADITIONAL_RULE);
+    }
     let terms = settings.dictionary_terms();
     if !terms.is_empty() {
         system_prompt.push_str(
@@ -74,7 +83,7 @@ pub async fn optimize(raw_text: &str, settings: &AppSettings) -> AppResult<Strin
     })
     .await?;
 
-    let payload: ChatResponse = api::parse_json(response, "文本润色").await?;
+    let payload: ChatResponse = api::parse_json(response, tr(&i18n::STAGE_POLISH)).await?;
     let text = payload
         .choices
         .into_iter()

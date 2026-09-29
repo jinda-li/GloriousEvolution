@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 
 import type { SaveState } from "../App";
 import { LANGUAGES, LLM_MODELS, OPENROUTER_BASE_URL, STT_MODELS } from "../constants";
+import { LOCALES, useT } from "../i18n";
 import type { ModelOption } from "../constants";
 import type { AppSettings, RecordMode } from "../types";
 import { ApiKeyField } from "./ApiKeyField";
@@ -20,8 +21,8 @@ type SettingsViewProps = {
 export function SettingsView({ settings, defaultSystemPrompt, saveState, onChange }: SettingsViewProps) {
   const [devices, setDevices] = useState<string[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
-    onChange({ ...settings, [key]: value });
+  const t = useT();
+  const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => onChange({ ...settings, [key]: value });
 
   function refreshDevices() {
     void invoke<string[]>("list_input_devices").then(setDevices);
@@ -32,94 +33,102 @@ export function SettingsView({ settings, defaultSystemPrompt, saveState, onChang
     <section className="page settings">
       <div className="page-head">
         <div>
-          <h1>设置</h1>
-          <p className="muted">修改会自动保存。</p>
+          <h1>{t("settings.title")}</h1>
+          <p className="muted">{t("settings.autosave")}</p>
         </div>
         <SaveIndicator state={saveState} />
       </div>
 
-      <Section title="账户">
+      <Section title={t("settings.account")}>
         <ApiKeyField settings={settings} onChange={onChange} />
       </Section>
 
-      <Section title="快捷键">
-        <Row label="录音快捷键" hint="在任何应用里都可以使用。">
+      <Section title={t("settings.shortcuts")}>
+        <Row label={t("settings.shortcut")} hint={t("settings.shortcutHint")}>
           <ShortcutInput value={settings.shortcut} onChange={(shortcut) => set("shortcut", shortcut)} />
         </Row>
-        <Row label="触发方式">
+        <Row label={t("settings.mode")}>
           <Segmented<RecordMode>
             value={settings.recordMode}
             options={[
-              { id: "toggle", label: "按一下开始 / 再按结束" },
-              { id: "hold", label: "按住说话" },
+              { id: "toggle", label: t("settings.mode.toggle") },
+              { id: "hold", label: t("settings.mode.hold") },
             ]}
             onChange={(mode) => set("recordMode", mode)}
           />
         </Row>
       </Section>
 
-      <Section title="语音识别">
-        <Row label="识别模型">
+      <Section title={t("settings.speech")}>
+        <Row label={t("settings.sttModel")}>
           <ModelPicker value={settings.sttModel} options={STT_MODELS} onChange={(id) => set("sttModel", id)} />
         </Row>
-        <Row label="说话语言" hint="固定语言可以提升准确率和速度。">
+        <Row label={t("settings.spokenLanguage")} hint={t("settings.spokenLanguageHint")}>
           <select value={settings.language} onChange={(event) => set("language", event.target.value)}>
             {LANGUAGES.map((language) => (
               <option key={language.id} value={language.id}>
-                {language.label}
+                {language.id === "auto" ? t("settings.autoDetect") : language.label}
               </option>
             ))}
           </select>
         </Row>
-        <Row label="麦克风">
+        <Row label={t("settings.mic")}>
           <div className="inline-controls">
             <select value={settings.inputDevice} onChange={(event) => set("inputDevice", event.target.value)}>
-              <option value="">系统默认</option>
+              <option value="">{t("settings.micDefault")}</option>
               {devices.map((device) => (
                 <option key={device} value={device}>
                   {device}
                 </option>
               ))}
               {settings.inputDevice && !devices.includes(settings.inputDevice) ? (
-                <option value={settings.inputDevice}>{settings.inputDevice}（未连接）</option>
+                <option value={settings.inputDevice}>
+                  {t("settings.micDisconnected", { name: settings.inputDevice })}
+                </option>
               ) : null}
             </select>
-            <button type="button" className="icon-button" aria-label="刷新设备" title="刷新设备" onClick={refreshDevices}>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={t("settings.refreshDevices")}
+              title={t("settings.refreshDevices")}
+              onClick={refreshDevices}
+            >
               <RefreshCw size={15} />
             </button>
           </div>
         </Row>
       </Section>
 
-      <Section title="智能润色">
-        <Row label="启用润色" hint="去掉口头禅、重复和改口，修正标点与错别字。关闭后直接输出识别原文，速度更快。">
+      <Section title={t("settings.polish")}>
+        <Row label={t("settings.polishEnabled")} hint={t("settings.polishHint")}>
           <Toggle checked={settings.polishEnabled} onChange={(value) => set("polishEnabled", value)} />
         </Row>
         {settings.polishEnabled ? (
           <>
-            <Row label="润色模型">
+            <Row label={t("settings.llmModel")}>
               <ModelPicker value={settings.llmModel} options={LLM_MODELS} onChange={(id) => set("llmModel", id)} />
             </Row>
             <div className="field">
-              <span className="field-label">个人词典</span>
+              <span className="field-label">{t("settings.dictionary")}</span>
               <textarea
                 rows={3}
                 value={settings.dictionary}
-                placeholder="每行一个，或用逗号分隔。例如：OpenRouter, Tauri, 张三丰"
+                placeholder={t("settings.dictionaryPlaceholder")}
                 onChange={(event) => set("dictionary", event.target.value)}
               />
-              <p className="field-hint">人名、产品名、专业术语。润色时会把发音相近的词纠正成这里的写法。</p>
+              <p className="field-hint">{t("settings.dictionaryHint")}</p>
             </div>
             <div className="field">
               <div className="field-label-row">
-                <span className="field-label">润色指令</span>
+                <span className="field-label">{t("settings.prompt")}</span>
                 <button
                   type="button"
                   className="link-button"
                   disabled={settings.systemPrompt === defaultSystemPrompt}
                   onClick={() => set("systemPrompt", defaultSystemPrompt)}
                 >
-                  <RotateCcw size={13} /> 恢复默认
+                  <RotateCcw size={13} /> {t("settings.restoreDefault")}
                 </button>
               </div>
               <textarea
@@ -132,26 +141,36 @@ export function SettingsView({ settings, defaultSystemPrompt, saveState, onChang
         ) : null}
       </Section>
 
-      <Section title="输出与通用">
-        <Row label="自动输入到光标处" hint="关闭后结果只显示在浮窗里，点击复制。">
+      <Section title={t("settings.general")}>
+        <Row label={t("settings.interfaceLanguage")}>
+          <select value={settings.uiLanguage} onChange={(event) => set("uiLanguage", event.target.value)}>
+            <option value="auto">{t("settings.followSystem")}</option>
+            {LOCALES.map((locale) => (
+              <option key={locale.id} value={locale.id}>
+                {locale.label}
+              </option>
+            ))}
+          </select>
+        </Row>
+        <Row label={t("settings.autoPaste")} hint={t("settings.autoPasteHint")}>
           <Toggle checked={settings.autoPaste} onChange={(value) => set("autoPaste", value)} />
         </Row>
-        <Row label="提示音">
+        <Row label={t("settings.sound")}>
           <Toggle checked={settings.soundEnabled} onChange={(value) => set("soundEnabled", value)} />
         </Row>
-        <Row label="保存历史记录">
+        <Row label={t("settings.history")}>
           <Toggle checked={settings.historyEnabled} onChange={(value) => set("historyEnabled", value)} />
         </Row>
-        <Row label="开机自动启动" hint="启动后在系统托盘待命。">
+        <Row label={t("settings.launchAtLogin")} hint={t("settings.launchAtLoginHint")}>
           <Toggle checked={settings.launchAtLogin} onChange={(value) => set("launchAtLogin", value)} />
         </Row>
       </Section>
 
       <button type="button" className="link-button advanced-toggle" onClick={() => setShowAdvanced((v) => !v)}>
-        {showAdvanced ? "收起高级设置" : "高级设置"}
+        {showAdvanced ? t("settings.hideAdvanced") : t("settings.showAdvanced")}
       </button>
       {showAdvanced ? (
-        <Section title="高级">
+        <Section title={t("settings.advanced")}>
           <div className="field">
             <div className="field-label-row">
               <span className="field-label">API Base URL</span>
@@ -161,7 +180,7 @@ export function SettingsView({ settings, defaultSystemPrompt, saveState, onChang
                 disabled={settings.baseUrl === OPENROUTER_BASE_URL}
                 onClick={() => set("baseUrl", OPENROUTER_BASE_URL)}
               >
-                <RotateCcw size={13} /> 恢复 OpenRouter
+                <RotateCcw size={13} /> {t("settings.restoreOpenRouter")}
               </button>
             </div>
             <input
@@ -169,9 +188,7 @@ export function SettingsView({ settings, defaultSystemPrompt, saveState, onChang
               spellCheck={false}
               onChange={(event) => set("baseUrl", event.target.value)}
             />
-            <p className="field-hint">
-              默认使用 OpenRouter。也可以填写任何同时兼容 OpenAI /audio/transcriptions 与 /chat/completions 的接口。
-            </p>
+            <p className="field-hint">{t("settings.baseUrlHint")}</p>
           </div>
         </Section>
       ) : null}
@@ -180,17 +197,18 @@ export function SettingsView({ settings, defaultSystemPrompt, saveState, onChang
 }
 
 function SaveIndicator({ state }: { state: SaveState }) {
+  const t = useT();
   if (state.kind === "saving") {
     return (
       <span className="save-indicator">
-        <Loader2 className="spin" size={14} /> 保存中
+        <Loader2 className="spin" size={14} /> {t("settings.saving")}
       </span>
     );
   }
   if (state.kind === "saved") {
     return (
       <span className="save-indicator ok">
-        <Check size={14} /> 已保存
+        <Check size={14} /> {t("settings.saved")}
       </span>
     );
   }
@@ -280,6 +298,7 @@ function ModelPicker({
   const isPreset = options.some((option) => option.id === value);
   const [custom, setCustom] = useState(!isPreset);
   const selected = options.find((option) => option.id === value);
+  const t = useT();
 
   return (
     <div className="model-picker">
@@ -299,7 +318,7 @@ function ModelPicker({
             {option.label}
           </option>
         ))}
-        <option value={CUSTOM}>自定义模型…</option>
+        <option value={CUSTOM}>{t("settings.customModel")}</option>
       </select>
       {custom ? (
         <input
@@ -309,7 +328,7 @@ function ModelPicker({
           onChange={(event) => onChange(event.target.value.trim())}
         />
       ) : (
-        <span className="field-hint">{selected?.note}</span>
+        <span className="field-hint">{selected ? t(selected.note) : null}</span>
       )}
     </div>
   );

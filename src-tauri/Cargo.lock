@@ -1555,8 +1555,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "glorious-evolution"
-version = "0.2.0"
+name = "sayso"
+version = "0.3.0"
 dependencies = [
  "arboard",
  "cpal",

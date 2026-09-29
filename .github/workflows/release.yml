@@ -1,0 +1,56 @@
+name: Release
+
+# Push a tag like v0.3.0 to build the Windows installer and a portable zip,
+# and publish them as a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Sayso ${{ github.ref_name }}
+          releaseBody: |
+            **Download `Sayso_*_x64-setup.exe`** below and run it (no admin rights needed), or grab the portable zip.
+            Requires Windows 10/11 and an [OpenRouter](https://openrouter.ai) API key.
+          releaseDraft: false
+          prerelease: false
+
+      - name: Upload portable zip
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag.TrimStart("v")
+          $exe = Get-ChildItem src-tauri/target/release -Filter *.exe | Where-Object { $_.BaseName -eq "sayso" } | Select-Object -First 1
+          New-Item -ItemType Directory -Force portable | Out-Null
+          Copy-Item $exe.FullName portable/Sayso.exe
+          $zip = "Sayso_${version}_x64_portable.zip"
+          Compress-Archive -Path portable/* -DestinationPath $zip -Force
+          gh release upload $tag $zip --clobber
