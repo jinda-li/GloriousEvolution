@@ -50,7 +50,7 @@
     "targets": ["nsis"],
     "publisher": "Jinda Li",
     "copyright": "Copyright (c) 2026 Jinda Li",
-    "homepage": "https://github.com/jinda-li/GloriousEvolution",
+    "homepage": "https://github.com/jinda-li/Sayso",
     "shortDescription": "Sayso: voice typing for any app",
     "longDescription": "Press a hotkey, speak, and clean, polished text appears at your cursor in any app. Powered by OpenRouter.",
     "category": "Productivity",

@@ -6,12 +6,12 @@
 
 **Just say so.** Press a hotkey, speak, and clean, polished text appears at your cursor, in any Windows app.
 
-[![Latest release](https://img.shields.io/github/v/release/jinda-li/GloriousEvolution?label=release&color=2f8f7f)](https://github.com/jinda-li/GloriousEvolution/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/jinda-li/GloriousEvolution/total?color=2f8f7f)](https://github.com/jinda-li/GloriousEvolution/releases)
+[![Latest release](https://img.shields.io/github/v/release/jinda-li/Sayso?label=release&color=2f8f7f)](https://github.com/jinda-li/Sayso/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/jinda-li/Sayso/total?color=2f8f7f)](https://github.com/jinda-li/Sayso/releases)
 ![Windows 10 / 11](https://img.shields.io/badge/Windows-10%20%7C%2011-2f8f7f?logo=windows)
 ![8 languages](https://img.shields.io/badge/UI-8%20languages-e08a45)
 
-<a href="https://github.com/jinda-li/GloriousEvolution/releases/latest"><img src="https://img.shields.io/badge/Download%20for%20Windows-Sayso%200.3.0-2f8f7f?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows" height="44" /></a>
+<a href="https://github.com/jinda-li/Sayso/releases/latest"><img src="https://img.shields.io/badge/Download%20for%20Windows-Sayso%200.3.0-2f8f7f?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows" height="44" /></a>
 
 **English** · [简体中文](README.zh-CN.md)
 
@@ -82,7 +82,7 @@ The interface is available in **English, 简体中文, 繁體中文, 日本語, 
 
 ## Get started in 60 seconds
 
-1. **Download** `Sayso_0.3.0_x64-setup.exe` from the [latest release](https://github.com/jinda-li/GloriousEvolution/releases/latest) and run it. No admin rights needed. Prefer no installer? Grab the portable `.zip` instead.
+1. **Download** `Sayso_0.3.0_x64-setup.exe` from the [latest release](https://github.com/jinda-li/Sayso/releases/latest) and run it. No admin rights needed. Prefer no installer? Grab the portable `.zip` instead.
 2. **Create a key** at [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) and add a few dollars of credit.
 3. **Paste the key** into Sayso, click **Test connection**, then **Get started**.
 4. Click into any text field and press **`Alt+Q`**. Talk. Press it again.

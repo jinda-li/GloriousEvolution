@@ -6,12 +6,12 @@
 
 **说到，就写到。** 按下快捷键开口说话，干净通顺的文字直接出现在光标处。适用于任何 Windows 应用。
 
-[![最新版本](https://img.shields.io/github/v/release/jinda-li/GloriousEvolution?label=release&color=2f8f7f)](https://github.com/jinda-li/GloriousEvolution/releases/latest)
-[![下载量](https://img.shields.io/github/downloads/jinda-li/GloriousEvolution/total?color=2f8f7f)](https://github.com/jinda-li/GloriousEvolution/releases)
+[![最新版本](https://img.shields.io/github/v/release/jinda-li/Sayso?label=release&color=2f8f7f)](https://github.com/jinda-li/Sayso/releases/latest)
+[![下载量](https://img.shields.io/github/downloads/jinda-li/Sayso/total?color=2f8f7f)](https://github.com/jinda-li/Sayso/releases)
 ![Windows 10 / 11](https://img.shields.io/badge/Windows-10%20%7C%2011-2f8f7f?logo=windows)
 ![8 种语言](https://img.shields.io/badge/UI-8%20languages-e08a45)
 
-<a href="https://github.com/jinda-li/GloriousEvolution/releases/latest"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD%20Windows%20%E7%89%88-Sayso%200.3.0-2f8f7f?style=for-the-badge&logo=windows&logoColor=white" alt="下载 Windows 版" height="44" /></a>
+<a href="https://github.com/jinda-li/Sayso/releases/latest"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD%20Windows%20%E7%89%88-Sayso%200.3.0-2f8f7f?style=for-the-badge&logo=windows&logoColor=white" alt="下载 Windows 版" height="44" /></a>
 
 [English](README.md) · **简体中文**
 
@@ -82,7 +82,7 @@
 
 ## 60 秒上手
 
-1. 从 [最新版本](https://github.com/jinda-li/GloriousEvolution/releases/latest) **下载** `Sayso_0.3.0_x64-setup.exe` 并运行，无需管理员权限。不想安装？下载便携版 `.zip`，解压即用。
+1. 从 [最新版本](https://github.com/jinda-li/Sayso/releases/latest) **下载** `Sayso_0.3.0_x64-setup.exe` 并运行，无需管理员权限。不想安装？下载便携版 `.zip`，解压即用。
 2. 在 [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) **创建 Key**，并充值几美元。
 3. 把 Key **粘贴**到 Sayso，点 **测试连接**，再点 **开始使用**。
 4. 点进任意输入框，按 **`Alt+Q`**，说话，再按一次。
